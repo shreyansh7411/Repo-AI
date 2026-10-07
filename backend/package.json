@@ -1,0 +1,51 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "parser:test": "tsx src/parser/test-parser.ts",
+    "parser:test-symbols": "tsx src/parser/test-symbol-extractor.ts",
+    "parser:test-references": "tsx src/parser/test-reference-extractor.ts",
+    "test:resolver": "tsx src/parser/test-symbol-resolver.ts",
+    "test:structural-references": "tsx src/parser/test-structural-reference-extractor.ts",
+    "test:relationships": "tsx src/ingestion/test-relationship-repository.ts",
+    "test:chunk-builder": "tsx src/chunking/test-code-chunk-builder.ts",
+    "test:chunk-repository": "tsx src/ingestion/test-code-chunk-repository.ts",
+    "test:embeddings": "tsx src/embeddings/test-embedding-service.ts && tsx src/embeddings/test-gemini-embedding-provider.ts && tsx src/embeddings/test-pgvector.ts",
+    "test:indexing-relationships": "tsx src/ingestion/test-relationship-indexing.ts",
+    "test:verify-graph": "tsx src/ingestion/verify-relationship-graph.ts",
+    "test:graph": "tsx src/parser/test-parser.ts && tsx src/parser/test-symbol-extractor.ts && tsx src/parser/test-reference-extractor.ts && tsx src/parser/test-structural-reference-extractor.ts && tsx src/parser/test-symbol-resolver.ts && tsx src/ingestion/test-relationship-repository.ts && tsx src/ingestion/test-relationship-indexing.ts && tsx src/chunking/test-code-chunk-builder.ts && tsx src/ingestion/test-code-chunk-repository.ts",
+    "test:milestone5": "tsx src/retrieval/test-hybrid-retrieval.ts && tsx src/retrieval/test-assistant-service.ts && tsx src/ai/test-gemini-llm-provider.ts && tsx src/retrieval/test-retrieval-controller.ts && tsx src/retrieval/test-structural-postgres.ts && tsx src/retrieval/test-hybrid-postgres.ts",
+    "test:milestone6": "tsx src/graph/test-graph-analysis.ts",
+    "test:milestone7": "tsx src/query/test-repository-query.ts",
+    "verify:milestone7:production": "tsx src/query/verify-production-query.ts",
+    "start": "node dist/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@types/node": "^26.6.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1",
+    "pg": "^8.23.0",
+    "simple-git": "^4.0.2",
+    "tree-sitter-java": "0.23.5",
+    "tree-sitter-javascript": "0.25.0",
+    "tree-sitter-typescript": "0.23.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "web-tree-sitter": "0.27.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/pg": "^8.23.1"
+  },
+  "type": "module"
+}

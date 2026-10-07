@@ -1,0 +1,1 @@
+package ambiguous; class AmbiguousChild extends Twin {}
