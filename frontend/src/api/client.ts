@@ -52,6 +52,32 @@ export interface RepositorySearchResult {
   evidence: SearchEvidence[]
 }
 
+export type SymbolType = 'CLASS' | 'INTERFACE' | 'ENUM' | 'METHOD' | 'CONSTRUCTOR' | 'FUNCTION' | 'FIELD' | 'VARIABLE'
+
+export interface RepositorySymbolSummary {
+  id: string
+  name: string
+  type: SymbolType
+  file: { id: string; path: string; language: string | null }
+  startLine: number
+  endLine: number
+  signature: string | null
+  parent: { id: string; name: string; type: string } | null
+}
+
+export interface RepositorySymbolPage {
+  repositoryId: string
+  page: number
+  pageSize: number
+  totalCount: number
+  totalPages: number
+  symbols: RepositorySymbolSummary[]
+}
+
+export interface RepositorySymbolDetails extends RepositorySymbolSummary {
+  sourceContext: { startLine: number; endLine: number; content: string } | null
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response
   try {
@@ -86,6 +112,16 @@ export const repositoryApi = {
   search: (repositoryId: string, query: string, mode: SearchMode) =>
     request<RepositorySearchResult>(`/repositories/${encodeURIComponent(repositoryId)}/query/search`, {
       method: 'POST', body: JSON.stringify({ query, mode, topK: 8, maxDepth: 1 }),
+    }),
+  listSymbols: (repositoryId: string, options: { page: number; pageSize: number; type: SymbolType | ''; search: string }, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ page: String(options.page), pageSize: String(options.pageSize) })
+    if (options.type) params.set('type', options.type)
+    if (options.search) params.set('search', options.search)
+    return request<RepositorySymbolPage>(`/repositories/${encodeURIComponent(repositoryId)}/query/symbols?${params}`, { signal })
+  },
+  getSymbol: (repositoryId: string, symbolId: string, signal?: AbortSignal) =>
+    request<RepositorySymbolDetails>(`/repositories/${encodeURIComponent(repositoryId)}/query/symbol`, {
+      method: 'POST', body: JSON.stringify({ symbolId }), signal,
     }),
 }
 

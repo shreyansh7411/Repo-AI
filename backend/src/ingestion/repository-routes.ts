@@ -3,7 +3,7 @@ import { indexRepositoryHandler, listRepositoriesHandler } from "./repository-co
 import { generateEmbeddingsHandler, semanticSearchHandler } from "../embeddings/embedding-controller.js";
 import { askHandler, retrieveHandler } from "../retrieval/retrieval-controller.js";
 import { callersHandler, calleesHandler, impactHandler, pathHandler } from "../graph/graph-controller.js";
-import { fileQueryHandler, impactQueryHandler, pathQueryHandler, searchQueryHandler, symbolQueryHandler, traceQueryHandler } from "../query/repository-query-controller.js";
+import { fileQueryHandler, impactQueryHandler, pathQueryHandler, searchQueryHandler, symbolQueryHandler, symbolsQueryHandler, traceQueryHandler } from "../query/repository-query-controller.js";
 
 const router = Router();
 
@@ -18,6 +18,7 @@ router.post("/:repositoryId/trace/callees", calleesHandler);
 router.post("/:repositoryId/impact", impactHandler);
 router.post("/:repositoryId/trace/path", pathHandler);
 router.post("/:repositoryId/query/symbol", symbolQueryHandler);
+router.get("/:repositoryId/query/symbols", symbolsQueryHandler);
 router.post("/:repositoryId/query/file", fileQueryHandler);
 router.post("/:repositoryId/query/search", searchQueryHandler);
 router.post("/:repositoryId/query/trace", traceQueryHandler);

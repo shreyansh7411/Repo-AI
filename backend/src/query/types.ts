@@ -1,4 +1,5 @@
 import type { GraphSymbol, PathStep, RelationshipType, TraversalHit } from "../graph/types.js";
+import type { SymbolType } from "../parser/symbol-types.js";
 
 export type RepositorySearchMode = "semantic" | "structural" | "hybrid";
 
@@ -11,6 +12,27 @@ export interface RepositorySymbol {
     startLine: number;
     endLine: number;
     parent: { id: string; name: string; type: string } | null;
+    sourceContext: { startLine: number; endLine: number; content: string } | null;
+}
+
+export interface RepositorySymbolSummary {
+    id: string;
+    name: string;
+    type: SymbolType;
+    file: { id: string; path: string; language: string | null };
+    startLine: number;
+    endLine: number;
+    signature: string | null;
+    parent: { id: string; name: string; type: string } | null;
+}
+
+export interface RepositorySymbolPage {
+    repositoryId: string;
+    page: number;
+    pageSize: number;
+    totalCount: number;
+    totalPages: number;
+    symbols: RepositorySymbolSummary[];
 }
 
 export interface RepositoryFile {

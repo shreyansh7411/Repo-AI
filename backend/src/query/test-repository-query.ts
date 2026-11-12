@@ -23,7 +23,8 @@ function makeService(embeddingFails = false, repositoryExists = true) {
             getSymbol: async (_repoId: string, id: string) => id === sourceSymbol.id ? {
                 id, name: "reconcile", type: "METHOD", signature: "reconcile()", file: { id: "file-a", path: "src/reconcile.ts", language: "typescript" }, startLine: 2, endLine: 8, parent: null
             } : null,
-            getFile: async (_repoId: string, path: string) => path === "src/reconcile.ts" ? ({ id: "file-a", path, language: "typescript", size: 100, hash: "hash", symbols: [], chunkCount: 1 }) : null
+            getFile: async (_repoId: string, path: string) => path === "src/reconcile.ts" ? ({ id: "file-a", path, language: "typescript", size: 100, hash: "hash", symbols: [], chunkCount: 1 }) : null,
+            listSymbols: async () => ({ totalCount: 1, symbols: [{ id: sourceSymbol.id, name: "reconcile", type: "METHOD" as const, file: { id: "file-a", path: "src/reconcile.ts", language: "typescript" }, startLine: 2, endLine: 8, signature: "reconcile()", parent: null }] })
         },
         embeddings: { embedQuery: async () => { calls.push("embedding"); if (embeddingFails) throw new Error("Gemini request failed (HTTP 403): private detail"); return [1]; } },
         chunks: { search: async () => { calls.push("semantic-search"); return [{ id: "chunk-id", repositoryId, fileId: "file-a", filePath: "src/reconcile.ts", symbolId: sourceSymbol.id, symbolName: "reconcile", symbolType: "METHOD", startLine: 2, endLine: 8, content: "reconcile()", similarity: 0.9 }]; } },
@@ -56,6 +57,9 @@ async function unitTests() {
     const { service, calls } = makeService();
     const symbol = await service.symbol(repositoryId, sourceSymbol.id);
     assert.equal(symbol.signature, "reconcile()");
+    const symbols = await service.listSymbols(repositoryId, { page: 1, pageSize: 10, type: null, search: null });
+    assert.equal(symbols.totalPages, 1);
+    assert.equal(symbols.symbols[0].name, "reconcile");
     assert.equal((await service.file(repositoryId, "src/reconcile.ts")).chunkCount, 1);
     assert.equal((await service.search(repositoryId, "reconcile", "semantic", 5, 1)).evidence[0].similarity, 0.9);
     assert.ok(calls.includes("semantic-search"));
@@ -93,6 +97,9 @@ async function unitTests() {
     const invalidDirection = fakeResponse();
     await handlers.trace({ params: { repositoryId }, body: { symbolId: sourceSymbol.id, direction: "both" } } as unknown as Request, invalidDirection.response);
     assert.equal(invalidDirection.status(), 400);
+    const invalidSymbolFilter = fakeResponse();
+    await handlers.symbols({ params: { repositoryId }, query: { type: "PACKAGE" } } as unknown as Request, invalidSymbolFilter.response);
+    assert.equal(invalidSymbolFilter.status(), 400);
     const missingSymbol = fakeResponse();
     await handlers.symbol({ params: { repositoryId }, body: { symbolId: targetSymbol.id } } as unknown as Request, missingSymbol.response);
     assert.equal(missingSymbol.status(), 404);

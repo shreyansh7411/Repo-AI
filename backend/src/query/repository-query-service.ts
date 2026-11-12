@@ -6,15 +6,16 @@ import type { RelationshipType } from "../graph/types.js";
 import type { HybridRetrievalService } from "../retrieval/hybrid-retrieval-service.js";
 import type { StructuralRetrievalRepository } from "../retrieval/structural-retrieval-repository.js";
 import type { StructuralRelationship, StructuralSymbol } from "../retrieval/types.js";
+import type { SymbolType } from "../parser/symbol-types.js";
 import type { RepositoryQueryRepository } from "./repository-query-repository.js";
-import type { RepositoryEvidence, RepositoryPathResult, RepositorySearchMode, RepositorySearchResult, RepositorySymbol, RepositoryTraceResult } from "./types.js";
+import type { RepositoryEvidence, RepositoryPathResult, RepositorySearchMode, RepositorySearchResult, RepositorySymbol, RepositorySymbolPage, RepositoryTraceResult } from "./types.js";
 
 export class RepositoryQueryError extends Error {
     constructor(readonly status: 400 | 404 | 503 | 502, readonly code: string, message: string) { super(message); }
 }
 
 export interface RepositoryQueryDependencies {
-    metadata: Pick<RepositoryQueryRepository, "repositoryExists" | "getSymbol" | "getFile">;
+    metadata: Pick<RepositoryQueryRepository, "repositoryExists" | "getSymbol" | "getFile" | "listSymbols">;
     embeddings: Pick<EmbeddingService, "embedQuery">;
     chunks: Pick<CodeChunkEmbeddingRepository, "search">;
     structural: Pick<StructuralRetrievalRepository, "findMatchingSymbols" | "expand" | "getSymbolChunks">;
@@ -30,6 +31,13 @@ export class RepositoryQueryService {
         const result = await this.deps.metadata.getSymbol(repositoryId, symbolId);
         if (!result) throw new RepositoryQueryError(404, "SYMBOL_NOT_FOUND", "Symbol was not found in this repository.");
         return result;
+    }
+
+    async listSymbols(repositoryId: string, options: { page: number; pageSize: number; type: SymbolType | null; search: string | null }): Promise<RepositorySymbolPage> {
+        await this.requireRepository(repositoryId);
+        const result = await this.deps.metadata.listSymbols(repositoryId, options);
+        return { repositoryId, page: options.page, pageSize: options.pageSize, totalCount: result.totalCount,
+            totalPages: Math.ceil(result.totalCount / options.pageSize), symbols: result.symbols };
     }
 
     async file(repositoryId: string, path: string) {

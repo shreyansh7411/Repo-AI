@@ -21,6 +21,7 @@
     "test:milestone5": "tsx src/retrieval/test-hybrid-retrieval.ts && tsx src/retrieval/test-assistant-service.ts && tsx src/ai/test-gemini-llm-provider.ts && tsx src/retrieval/test-retrieval-controller.ts && tsx src/retrieval/test-structural-postgres.ts && tsx src/retrieval/test-hybrid-postgres.ts",
     "test:milestone6": "tsx src/graph/test-graph-analysis.ts",
     "test:milestone7": "tsx src/query/test-repository-query.ts",
+    "test:symbol-explorer": "tsx src/query/test-symbol-explorer.ts",
     "test:repository-list": "tsx src/ingestion/test-repository-list.ts",
     "verify:milestone7:production": "tsx src/query/verify-production-query.ts",
     "start": "node dist/index.js"

@@ -3,6 +3,7 @@ import { repositoryApi, type RepositoryIndexResult, type RepositorySearchResult,
 import { AddRepositoryDialog } from './components/AddRepositoryDialog'
 import { RepositorySidebar } from './components/RepositorySidebar'
 import { SearchWorkspace } from './components/SearchWorkspace'
+import { SymbolsWorkspace } from './components/SymbolsWorkspace'
 import { Icon } from './components/Icons'
 import './App.css'
 
@@ -20,6 +21,7 @@ function App() {
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [searchResult, setSearchResult] = useState<RepositorySearchResult | null>(null)
+  const [activeView, setActiveView] = useState<'search' | 'symbols'>('search')
 
   const activeRepository = useMemo(() => repositories.find(repository => repository.repositoryId === selectedId) ?? null, [repositories, selectedId])
 
@@ -115,13 +117,15 @@ function App() {
       loading={listLoading}
       error={listError}
       connectionState={connectionState}
+      activeView={activeView}
+      onViewChange={setActiveView}
       onSelect={id => { setSelectedId(id); setSearchResult(null); setSearchError(null); setNotice(null) }}
       onRefresh={() => void loadRepositories()}
       onAdd={() => { setIndexError(null); setDialogOpen(true) }}
     />
     <div className="main-shell">
       {notice && <div className="success-toast" role="status"><span className="success-check">✓</span>{notice}<button type="button" onClick={() => setNotice(null)} aria-label="Dismiss message"><Icon name="close" size={15} /></button></div>}
-      {activeRepository ? <SearchWorkspace
+      {activeRepository && activeView === 'search' ? <SearchWorkspace
         key={activeRepository.repositoryId}
         repositoryName={activeRepository.name}
         repositoryUrl={activeRepository.url}
@@ -131,6 +135,10 @@ function App() {
         searching={searching}
         error={searchError}
         onSearch={(query, mode) => void searchRepository(query, mode)}
+      /> : activeRepository ? <SymbolsWorkspace
+        key={`symbols-${activeRepository.repositoryId}`}
+        repositoryId={activeRepository.repositoryId}
+        repositoryName={activeRepository.name}
       /> : <main className="main-content welcome-state">
         <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>Overview</strong></div><div className={`backend-status ${connectionState}`}><span className="status-dot" />{connectionState === 'connected' ? 'Backend connected' : connectionState === 'checking' ? 'Connecting…' : 'Backend unavailable'}</div></header>
         <section className="welcome-card"><div className="welcome-icon"><Icon name="brand" size={28} /></div><p className="eyebrow">REPOSITORY UNDERSTANDING AI</p><h1>Make your codebase<br /><span>make sense.</span></h1><p className="welcome-copy">Index a Git repository to explore its source code with grounded, traceable evidence.</p>

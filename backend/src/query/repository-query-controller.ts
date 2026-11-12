@@ -6,6 +6,7 @@ import { GraphRepository } from "../graph/graph-repository.js";
 import { GraphAnalysisError, GraphTraversalService } from "../graph/graph-traversal-service.js";
 import { HybridRetrievalService } from "../retrieval/hybrid-retrieval-service.js";
 import { StructuralRetrievalRepository } from "../retrieval/structural-retrieval-repository.js";
+import type { SymbolType } from "../parser/symbol-types.js";
 import { RepositoryQueryRepository } from "./repository-query-repository.js";
 import { RepositoryQueryError, RepositoryQueryService } from "./repository-query-service.js";
 import type { RepositorySearchMode } from "./types.js";
@@ -24,12 +25,12 @@ const queryService = new RepositoryQueryService({
 type Handler = (req: Request, res: Response) => Promise<unknown>;
 
 export function createRepositoryQueryHandlers(service: RepositoryQueryService) {
-    const handle = (action: (repositoryId: string, body: Record<string, unknown>) => Promise<unknown>): Handler => async (req, res) => {
+    const handle = (action: (repositoryId: string, body: Record<string, unknown>, req: Request) => Promise<unknown>): Handler => async (req, res) => {
         const repositoryId = routeValue(req.params.repositoryId);
         if (!uuidPattern.test(repositoryId)) return res.status(400).json({ error: { code: "INVALID_REPOSITORY_ID", message: "A valid repositoryId is required." } });
         const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body as Record<string, unknown> : {};
         try {
-            return res.json(await action(repositoryId, body));
+            return res.json(await action(repositoryId, body, req));
         } catch (error) {
             if (error instanceof InvalidQueryRequest) return res.status(400).json({ error: { code: "INVALID_REQUEST", message: error.message } });
             if (error instanceof RepositoryQueryError) return res.status(error.status).json({ error: { code: error.code, message: error.message } });
@@ -43,6 +44,7 @@ export function createRepositoryQueryHandlers(service: RepositoryQueryService) {
 
     return {
         symbol: handle((repositoryId, body) => service.symbol(repositoryId, uuid(body.symbolId, "symbolId"))),
+        symbols: handle((repositoryId, _body, req) => service.listSymbols(repositoryId, symbolListOptions(req.query))),
         file: handle((repositoryId, body) => service.file(repositoryId, filePath(body.path))),
         search: handle((repositoryId, body) => service.search(repositoryId, queryText(body.query), searchMode(body.mode), topK(body.topK), depth(body.maxDepth, 1))),
         trace: handle((repositoryId, body) => service.trace(repositoryId, uuid(body.symbolId, "symbolId"), direction(body.direction), depth(body.maxDepth, 1))),
@@ -86,8 +88,31 @@ function depth(value: unknown, fallback: number): number {
     return Number(parsed);
 }
 
+const SYMBOL_TYPES: readonly SymbolType[] = ["CLASS", "INTERFACE", "ENUM", "METHOD", "CONSTRUCTOR", "FUNCTION", "FIELD", "VARIABLE"];
+function queryParam(value: unknown, name: string): string | undefined {
+    if (value === undefined) return undefined;
+    if (typeof value !== "string") throw new InvalidQueryRequest(`${name} must be supplied once as a string.`);
+    return value;
+}
+function symbolListOptions(query: Request["query"]) {
+    const pageText = queryParam(query.page, "page");
+    const pageSizeText = queryParam(query.pageSize, "pageSize");
+    const page = pageText === undefined ? 1 : Number(pageText);
+    const pageSize = pageSizeText === undefined ? 50 : Number(pageSizeText);
+    if (!Number.isInteger(page) || page < 1 || page > 1_000_000) throw new InvalidQueryRequest("page must be an integer between 1 and 1000000.");
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) throw new InvalidQueryRequest("pageSize must be an integer between 1 and 100.");
+    const typeText = queryParam(query.type, "type");
+    if (typeText !== undefined && !SYMBOL_TYPES.includes(typeText as SymbolType)) {
+        throw new InvalidQueryRequest(`type must be one of ${SYMBOL_TYPES.join(", ")}.`);
+    }
+    const searchText = queryParam(query.search, "search")?.trim() ?? "";
+    if (searchText.length > 100 || /[\u0000-\u001f]/.test(searchText)) throw new InvalidQueryRequest("search must be no longer than 100 characters.");
+    return { page, pageSize, type: (typeText as SymbolType | undefined) ?? null, search: searchText || null };
+}
+
 const handlers = createRepositoryQueryHandlers(queryService);
 export const symbolQueryHandler = handlers.symbol;
+export const symbolsQueryHandler = handlers.symbols;
 export const fileQueryHandler = handlers.file;
 export const searchQueryHandler = handlers.search;
 export const traceQueryHandler = handlers.trace;

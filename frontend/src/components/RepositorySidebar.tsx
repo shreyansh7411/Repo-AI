@@ -7,12 +7,14 @@ interface Props {
   loading: boolean
   error: string | null
   connectionState: 'checking' | 'connected' | 'error'
+  activeView: 'search' | 'symbols'
+  onViewChange: (view: 'search' | 'symbols') => void
   onSelect: (repositoryId: string) => void
   onRefresh: () => void
   onAdd: () => void
 }
 
-export function RepositorySidebar({ repositories, selectedId, loading, error, connectionState, onSelect, onRefresh, onAdd }: Props) {
+export function RepositorySidebar({ repositories, selectedId, loading, error, connectionState, activeView, onViewChange, onSelect, onRefresh, onAdd }: Props) {
   return <aside className="sidebar">
     <div className="brand-lockup">
       <div className="brand-mark"><Icon name="brand" size={22} /></div>
@@ -29,6 +31,12 @@ export function RepositorySidebar({ repositories, selectedId, loading, error, co
     <button className="add-repository-button" type="button" onClick={onAdd}>
       <Icon name="plus" size={17} /><span>Add repository</span><span className="shortcut">⌘ K</span>
     </button>
+
+    {selectedId && <nav className="workspace-nav" aria-label="Repository views">
+      <span className="nav-section-label">EXPLORE</span>
+      <button type="button" className={`workspace-nav-item${activeView === 'search' ? ' active' : ''}`} onClick={() => onViewChange('search')} aria-current={activeView === 'search' ? 'page' : undefined}><Icon name="search" size={16} />Search</button>
+      <button type="button" className={`workspace-nav-item${activeView === 'symbols' ? ' active' : ''}`} onClick={() => onViewChange('symbols')} aria-current={activeView === 'symbols' ? 'page' : undefined}><Icon name="code" size={16} />Symbols</button>
+    </nav>}
 
     <div className="repository-list" aria-label="Repositories">
       {loading && repositories.length === 0 && <div className="sidebar-state"><Icon name="spinner" />Loading repositories…</div>}
@@ -51,7 +59,7 @@ export function RepositorySidebar({ repositories, selectedId, loading, error, co
 
     <div className="sidebar-footer">
       <span className="connection-indicator"><span className={`status-dot ${connectionState === 'connected' ? 'ready' : connectionState === 'error' ? 'offline' : 'pending'}`} />{connectionState === 'connected' ? 'API connected' : connectionState === 'error' ? 'API unavailable' : 'Connecting to API'}</span>
-      <span className="version-label">MILESTONE 8</span>
+      <span className="version-label">MILESTONE 9A</span>
     </div>
   </aside>
 }
