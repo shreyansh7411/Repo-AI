@@ -1,5 +1,13 @@
 import { Request, Response } from "express";
-import { indexRepository } from "./services/repository-service.js";
+import { indexRepository, listRepositories } from "./services/repository-service.js";
+
+export async function listRepositoriesHandler(_req: Request, res: Response) {
+    try {
+        return res.json({ repositories: await listRepositories() });
+    } catch {
+        return res.status(500).json({ error: "Failed to load repositories" });
+    }
+}
 
 export async function indexRepositoryHandler(
     req: Request,

@@ -1,0 +1,114 @@
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api').replace(/\/$/, '')
+
+export interface RepositorySummary {
+  repositoryId: string
+  name: string
+  url: string | null
+  indexingStatus: 'INDEXED' | 'NOT_INDEXED'
+  fileCount: number
+  symbolCount: number
+  createdAt: string
+  indexedAt: string | null
+}
+
+export interface RepositoryIndexResult {
+  message: string
+  repositoryId: string
+  fileCount: number
+  symbolCount: number
+  relationshipCount: number
+  chunkCount: number
+}
+
+export type SearchMode = 'structural' | 'hybrid'
+
+export interface SearchEvidence {
+  kind: 'CODE_CHUNK' | 'RELATIONSHIP'
+  source: 'SEMANTIC' | 'STRUCTURAL' | 'BOTH'
+  file: { id: string; path: string; language: string | null }
+  symbol: { id: string; name: string; type: string } | null
+  startLine: number
+  endLine: number
+  content?: string
+  chunkId?: string
+  similarity?: number
+  relationship?: {
+    id: string
+    type: string
+    sourceSymbol: { id: string; name: string; type: string; fileId: string; filePath: string; startLine: number; endLine: number }
+    targetSymbol: { id: string; name: string; type: string; fileId: string; filePath: string; startLine: number; endLine: number }
+  }
+}
+
+export interface RepositorySearchResult {
+  repositoryId: string
+  query: string
+  mode: 'semantic' | 'structural' | 'hybrid'
+  topK: number
+  maxDepth: number
+  effectiveMaxDepth?: number
+  semanticAvailable: boolean | null
+  semanticError?: string
+  evidence: SearchEvidence[]
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers: { ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...init.headers },
+    })
+  } catch {
+    throw new Error(`Cannot reach the repository API at ${API_BASE_URL}. Check that the backend is running.`)
+  }
+
+  const contentType = response.headers.get('content-type') || ''
+  const payload: unknown = contentType.includes('application/json') ? await response.json() : await response.text()
+  if (!response.ok) throw new Error(extractMessage(payload, response.status))
+  return payload as T
+}
+
+function extractMessage(payload: unknown, status: number): string {
+  if (typeof payload === 'object' && payload !== null && 'error' in payload) {
+    const error = payload.error
+    if (typeof error === 'string') return error
+    if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') return error.message
+  }
+  return `Repository API request failed with status ${status}.`
+}
+
+export const repositoryApi = {
+  list: () => request<{ repositories: RepositorySummary[] }>('/repositories'),
+  index: (name: string, url: string) => request<RepositoryIndexResult>('/repositories/index', {
+    method: 'POST', body: JSON.stringify({ name, url }),
+  }),
+  search: (repositoryId: string, query: string, mode: SearchMode) =>
+    request<RepositorySearchResult>(`/repositories/${encodeURIComponent(repositoryId)}/query/search`, {
+      method: 'POST', body: JSON.stringify({ query, mode, topK: 8, maxDepth: 1 }),
+    }),
+}
+
+export function repositoryNameFromUrl(value: string): string {
+  const scpPath = value.match(/^[^@\s]+@[^:\s]+:(.+)$/)?.[1]
+  const rawPath = scpPath ?? new URL(value).pathname
+  const lastPart = decodeURIComponent(rawPath.split('/').filter(Boolean).at(-1) || '')
+  const withoutGit = lastPart.replace(/\.git$/i, '')
+  const safeName = withoutGit.replace(/[^a-zA-Z0-9._-]/g, '-').replace(/^[-.]+|[-.]+$/g, '')
+  if (!safeName || safeName === '.' || safeName === '..') throw new Error('The repository URL must end with a repository name.')
+  return safeName
+}
+
+export function validateGitUrl(value: string): string {
+  const url = value.trim()
+  if (!url) throw new Error('Enter a Git repository URL.')
+  if (/^[^@\s]+@[^:\s]+:.+/.test(url)) return url
+  let parsed: URL
+  try { parsed = new URL(url) } catch { throw new Error('Enter a valid repository URL, such as https://github.com/org/project.git.') }
+  const supportedRemote = ['https:', 'http:', 'ssh:', 'git:'].includes(parsed.protocol) && Boolean(parsed.hostname)
+  const supportedLocalGit = parsed.protocol === 'file:' && Boolean(parsed.pathname)
+  if (!supportedRemote && !supportedLocalGit) {
+    throw new Error('Use an HTTPS, HTTP, SSH, Git, or local Git repository URL.')
+  }
+  return url
+}

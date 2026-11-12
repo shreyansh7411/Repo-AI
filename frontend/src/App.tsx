@@ -1,122 +1,145 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { repositoryApi, type RepositoryIndexResult, type RepositorySearchResult, type RepositorySummary, type SearchMode } from './api/client'
+import { AddRepositoryDialog } from './components/AddRepositoryDialog'
+import { RepositorySidebar } from './components/RepositorySidebar'
+import { SearchWorkspace } from './components/SearchWorkspace'
+import { Icon } from './components/Icons'
 import './App.css'
 
+const SELECTED_REPOSITORY_KEY = 'repo-ai:selected-repository'
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [repositories, setRepositories] = useState<RepositorySummary[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(() => localStorage.getItem(SELECTED_REPOSITORY_KEY))
+  const [listLoading, setListLoading] = useState(true)
+  const [listError, setListError] = useState<string | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [indexing, setIndexing] = useState(false)
+  const [indexError, setIndexError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [searchResult, setSearchResult] = useState<RepositorySearchResult | null>(null)
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+  const activeRepository = useMemo(() => repositories.find(repository => repository.repositoryId === selectedId) ?? null, [repositories, selectedId])
 
-      <div className="ticks"></div>
+  const loadRepositories = useCallback(async () => {
+    setListLoading(true)
+    setListError(null)
+    try {
+      const response = await repositoryApi.list()
+      setRepositories(response.repositories)
+      setSelectedId(current => {
+        if (current && response.repositories.some(repository => repository.repositoryId === current)) return current
+        return response.repositories[0]?.repositoryId ?? null
+      })
+    } catch (error) {
+      setListError(error instanceof Error ? error.message : 'Could not load repositories.')
+    } finally {
+      setListLoading(false)
+    }
+  }, [])
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+  useEffect(() => {
+    let active = true
+    repositoryApi.list().then(response => {
+      if (!active) return
+      setRepositories(response.repositories)
+      setSelectedId(current => current && response.repositories.some(repository => repository.repositoryId === current)
+        ? current
+        : response.repositories[0]?.repositoryId ?? null)
+    }).catch(error => {
+      if (active) setListError(error instanceof Error ? error.message : 'Could not load repositories.')
+    }).finally(() => {
+      if (active) setListLoading(false)
+    })
+    return () => { active = false }
+  }, [])
+  useEffect(() => {
+    if (selectedId) localStorage.setItem(SELECTED_REPOSITORY_KEY, selectedId)
+    else localStorage.removeItem(SELECTED_REPOSITORY_KEY)
+  }, [selectedId])
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+  useEffect(() => {
+    function onShortcut(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setDialogOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onShortcut)
+    return () => window.removeEventListener('keydown', onShortcut)
+  }, [])
+
+  async function addRepository(name: string, url: string) {
+    setIndexing(true)
+    setIndexError(null)
+    setNotice(null)
+    try {
+      const result: RepositoryIndexResult = await repositoryApi.index(name, url)
+      setSearchResult(null)
+      setSearchError(null)
+      setSelectedId(result.repositoryId)
+      setDialogOpen(false)
+      setNotice(`Indexed ${name}: ${result.fileCount.toLocaleString()} files and ${result.symbolCount.toLocaleString()} symbols are ready to search.`)
+      await loadRepositories()
+      setSelectedId(result.repositoryId)
+    } catch (error) {
+      setIndexError(error instanceof Error ? error.message : 'Repository indexing failed.')
+    } finally {
+      setIndexing(false)
+    }
+  }
+
+  async function searchRepository(query: string, mode: SearchMode) {
+    if (!activeRepository) return
+    setSearching(true)
+    setSearchError(null)
+    setSearchResult(null)
+    try {
+      const result = await repositoryApi.search(activeRepository.repositoryId, query, mode)
+      setSearchResult(result)
+    } catch (error) {
+      setSearchError(error instanceof Error ? error.message : 'Search failed.')
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  const connectionState = listLoading ? 'checking' : listError ? 'error' : 'connected'
+
+  return <div className="app-shell">
+    <RepositorySidebar
+      repositories={repositories}
+      selectedId={selectedId}
+      loading={listLoading}
+      error={listError}
+      connectionState={connectionState}
+      onSelect={id => { setSelectedId(id); setSearchResult(null); setSearchError(null); setNotice(null) }}
+      onRefresh={() => void loadRepositories()}
+      onAdd={() => { setIndexError(null); setDialogOpen(true) }}
+    />
+    <div className="main-shell">
+      {notice && <div className="success-toast" role="status"><span className="success-check">✓</span>{notice}<button type="button" onClick={() => setNotice(null)} aria-label="Dismiss message"><Icon name="close" size={15} /></button></div>}
+      {activeRepository ? <SearchWorkspace
+        key={activeRepository.repositoryId}
+        repositoryName={activeRepository.name}
+        repositoryUrl={activeRepository.url}
+        fileCount={activeRepository.fileCount}
+        symbolCount={activeRepository.symbolCount}
+        searchResult={searchResult}
+        searching={searching}
+        error={searchError}
+        onSearch={(query, mode) => void searchRepository(query, mode)}
+      /> : <main className="main-content welcome-state">
+        <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>Overview</strong></div><div className={`backend-status ${connectionState}`}><span className="status-dot" />{connectionState === 'connected' ? 'Backend connected' : connectionState === 'checking' ? 'Connecting…' : 'Backend unavailable'}</div></header>
+        <section className="welcome-card"><div className="welcome-icon"><Icon name="brand" size={28} /></div><p className="eyebrow">REPOSITORY UNDERSTANDING AI</p><h1>Make your codebase<br /><span>make sense.</span></h1><p className="welcome-copy">Index a Git repository to explore its source code with grounded, traceable evidence.</p>
+          {listLoading ? <div className="loading-card"><Icon name="spinner" />Loading your workspace…</div> : listError ? <div className="inline-error" role="alert">{listError}<button type="button" className="text-action" onClick={() => void loadRepositories()}>Retry</button></div> : <button className="button-primary" type="button" onClick={() => { setIndexError(null); setDialogOpen(true) }}><Icon name="plus" />Add your first repository <Icon name="arrow" size={16} /></button>}
+        </section>
+      </main>}
+    </div>
+    {dialogOpen && <AddRepositoryDialog busy={indexing} error={indexError} onClose={() => { if (!indexing) setDialogOpen(false) }} onSubmit={(name, url) => void addRepository(name, url)} />}
+  </div>
 }
 
 export default App

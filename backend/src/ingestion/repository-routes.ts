@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { indexRepositoryHandler } from "./repository-controller.js";
+import { indexRepositoryHandler, listRepositoriesHandler } from "./repository-controller.js";
 import { generateEmbeddingsHandler, semanticSearchHandler } from "../embeddings/embedding-controller.js";
 import { askHandler, retrieveHandler } from "../retrieval/retrieval-controller.js";
 import { callersHandler, calleesHandler, impactHandler, pathHandler } from "../graph/graph-controller.js";
@@ -7,6 +7,7 @@ import { fileQueryHandler, impactQueryHandler, pathQueryHandler, searchQueryHand
 
 const router = Router();
 
+router.get("/", listRepositoriesHandler);
 router.post("/index", indexRepositoryHandler);
 router.post("/:repositoryId/embeddings", generateEmbeddingsHandler);
 router.post("/:repositoryId/search", semanticSearchHandler);

@@ -166,3 +166,37 @@ export async function indexRepository(
         throw error;
     }
 }
+
+export interface RepositoryListItem {
+    repositoryId: string;
+    name: string;
+    url: string | null;
+    indexingStatus: "INDEXED" | "NOT_INDEXED";
+    fileCount: number;
+    symbolCount: number;
+    createdAt: string;
+    indexedAt: string | null;
+}
+
+export async function listRepositories(): Promise<RepositoryListItem[]> {
+    const result = await pool.query<{
+        repositoryId: string; name: string; url: string | null; createdAt: Date; indexedAt: Date | null;
+        fileCount: string; symbolCount: string;
+    }>(
+        `SELECT r.id AS "repositoryId", r.name, r.url, r.created_at AS "createdAt", r.indexed_at AS "indexedAt",
+                (SELECT COUNT(*)::text FROM files f WHERE f.repository_id=r.id) AS "fileCount",
+                (SELECT COUNT(*)::text FROM symbols s WHERE s.repository_id=r.id) AS "symbolCount"
+         FROM repositories r
+         ORDER BY COALESCE(r.indexed_at, r.created_at) DESC, r.name, r.id`
+    );
+    return result.rows.map(row => ({
+        repositoryId: row.repositoryId,
+        name: row.name,
+        url: row.url,
+        indexingStatus: row.indexedAt ? "INDEXED" : "NOT_INDEXED",
+        fileCount: Number(row.fileCount),
+        symbolCount: Number(row.symbolCount),
+        createdAt: row.createdAt.toISOString(),
+        indexedAt: row.indexedAt?.toISOString() ?? null
+    }));
+}
