@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { repositoryApi, type RepositorySymbolDetails, type RepositorySymbolPage, type RepositorySymbolSummary, type SymbolType } from '../api/client'
+import { repositoryApi, type CallTraceResult, type RepositorySymbolDetails, type RepositorySymbolPage, type RepositorySymbolSummary, type SymbolType } from '../api/client'
 import { Icon } from './Icons'
 
 const PAGE_SIZE = 50
@@ -16,6 +16,8 @@ const SYMBOL_TYPES: Array<{ value: SymbolType | ''; label: string }> = [
 ]
 
 interface Props { repositoryId: string; repositoryName: string }
+type CallTraceState = { status: 'error'; message: string } | { status: 'loaded'; result: CallTraceResult }
+interface SymbolHistoryEntry { id: string; name: string }
 
 export function SymbolsWorkspace({ repositoryId, repositoryName }: Props) {
   const [search, setSearch] = useState('')
@@ -29,6 +31,10 @@ export function SymbolsWorkspace({ repositoryId, repositoryName }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [details, setDetails] = useState<RepositorySymbolDetails | null>(null)
   const [detailsError, setDetailsError] = useState<string | null>(null)
+  const [callers, setCallers] = useState<CallTraceState | null>(null)
+  const [callees, setCallees] = useState<CallTraceState | null>(null)
+  const [traceRetry, setTraceRetry] = useState(0)
+  const [symbolHistory, setSymbolHistory] = useState<SymbolHistoryEntry[]>([])
 
   const visibleKey = `${repositoryId}:${page}:${type}:${search.trim()}`
   const groups = useMemo(() => {
@@ -75,6 +81,24 @@ export function SymbolsWorkspace({ repositoryId, repositoryName }: Props) {
     return () => controller.abort()
   }, [repositoryId, selectedId])
 
+  useEffect(() => {
+    if (!selectedId || !details || details.id !== selectedId) return
+    if (details.type !== 'METHOD' && details.type !== 'FUNCTION') return
+
+    const controller = new AbortController()
+    repositoryApi.getCallers(repositoryId, selectedId, controller.signal)
+      .then(result => setCallers({ status: 'loaded', result }))
+      .catch(error => {
+        if (!controller.signal.aborted) setCallers({ status: 'error', message: error instanceof Error ? error.message : 'Could not load callers.' })
+      })
+    repositoryApi.getCallees(repositoryId, selectedId, controller.signal)
+      .then(result => setCallees({ status: 'loaded', result }))
+      .catch(error => {
+        if (!controller.signal.aborted) setCallees({ status: 'error', message: error instanceof Error ? error.message : 'Could not load callees.' })
+      })
+    return () => controller.abort()
+  }, [repositoryId, selectedId, details, traceRetry])
+
   const loading = loadedKey !== visibleKey
   const selectedSymbol = pageResult?.symbols.find(symbol => symbol.id === selectedId) ?? null
   const detailIsCurrent = details?.id === selectedId
@@ -85,6 +109,9 @@ export function SymbolsWorkspace({ repositoryId, repositoryName }: Props) {
     setSelectedId(null)
     setDetails(null)
     setDetailsError(null)
+    setCallers(null)
+    setCallees(null)
+    setSymbolHistory([])
   }
 
   function changeType(value: SymbolType | '') {
@@ -93,12 +120,40 @@ export function SymbolsWorkspace({ repositoryId, repositoryName }: Props) {
     setSelectedId(null)
     setDetails(null)
     setDetailsError(null)
+    setCallers(null)
+    setCallees(null)
+    setSymbolHistory([])
   }
 
   function selectSymbol(symbol: RepositorySymbolSummary) {
     setSelectedId(symbol.id)
     setDetails(null)
     setDetailsError(null)
+    setCallers(null)
+    setCallees(null)
+    setSymbolHistory([])
+  }
+
+  function navigateToRelated(symbol: CallTraceResult['results'][number]['symbol']) {
+    if (!selectedId) return
+    const currentName = details?.id === selectedId ? details.name : selectedSymbol?.name ?? 'symbol'
+    setSymbolHistory(history => [...history, { id: selectedId, name: currentName }])
+    setSelectedId(symbol.id)
+    setDetails(null)
+    setDetailsError(null)
+    setCallers(null)
+    setCallees(null)
+  }
+
+  function returnToPreviousSymbol() {
+    const previous = symbolHistory.at(-1)
+    if (!previous) return
+    setSymbolHistory(history => history.slice(0, -1))
+    setSelectedId(previous.id)
+    setDetails(null)
+    setDetailsError(null)
+    setCallers(null)
+    setCallees(null)
   }
 
   return <main className="main-content symbols-workspace">
@@ -134,7 +189,10 @@ export function SymbolsWorkspace({ repositoryId, repositoryName }: Props) {
           {!selectedId && <div className="detail-placeholder"><div className="detail-placeholder-icon"><Icon name="code" size={22} /></div><strong>Select a symbol</strong><span>Choose a declaration to inspect its location, signature, parent, and source context.</span></div>}
           {selectedId && !detailIsCurrent && !detailsError && <div className="detail-placeholder"><Icon name="spinner" /><span>Loading symbol details…</span></div>}
           {selectedId && detailsError && <div className="symbol-state error-text" role="alert"><strong>Couldn’t load symbol details</strong><span>{detailsError}</span><button type="button" className="text-action" onClick={() => { const selected = selectedSymbol; if (selected) selectSymbol(selected) }}>Retry</button></div>}
-          {selectedId && detailIsCurrent && details && <SymbolDetails symbol={details} />}
+          {selectedId && detailIsCurrent && details && <>
+            {symbolHistory.length > 0 && <button type="button" className="symbol-history-back" onClick={returnToPreviousSymbol}>← Back to {symbolHistory[symbolHistory.length - 1].name}</button>}
+            <SymbolDetails symbol={details} callers={callers} callees={callees} onNavigate={navigateToRelated} onRetryTraces={() => setTraceRetry(value => value + 1)} />
+          </>}
         </aside>
       </div>
     </section>
@@ -142,7 +200,13 @@ export function SymbolsWorkspace({ repositoryId, repositoryName }: Props) {
   </main>
 }
 
-function SymbolDetails({ symbol }: { symbol: RepositorySymbolDetails }) {
+function SymbolDetails({ symbol, callers, callees, onNavigate, onRetryTraces }: {
+  symbol: RepositorySymbolDetails
+  callers: CallTraceState | null
+  callees: CallTraceState | null
+  onNavigate: (symbol: CallTraceResult['results'][number]['symbol']) => void
+  onRetryTraces: () => void
+}) {
   return <div className="symbol-details">
     <div className="detail-header"><span className={`symbol-type-mark type-${symbol.type.toLowerCase()}`}><TypeGlyph type={symbol.type} /></span><span className="detail-type-label">{symbol.type}</span></div>
     <h2>{symbol.name}</h2>
@@ -153,7 +217,35 @@ function SymbolDetails({ symbol }: { symbol: RepositorySymbolDetails }) {
     <div className="detail-section source-context-section"><div className="detail-section-heading"><span className="detail-section-label">SOURCE CONTEXT</span>{symbol.sourceContext && <span>LINES {symbol.sourceContext.startLine}–{symbol.sourceContext.endLine}</span>}</div>
       {symbol.sourceContext ? <pre className="code-snippet symbol-source"><code>{symbol.sourceContext.content}</code></pre> : <p className="context-unavailable">No stored source chunk is available for this symbol.</p>}
     </div>
+    <section className="call-explorer" aria-label="Caller and callee explorer">
+      <div className="call-explorer-heading"><div><span className="detail-section-label">CALL RELATIONSHIPS</span><h3>Callers &amp; callees</h3></div><span className="call-depth-label">Direct · depth 1</span></div>
+      {symbol.type !== 'METHOD' && symbol.type !== 'FUNCTION' ? <p className="call-explorer-note">CALLS exploration is available for methods and functions. This symbol is {symbol.type.toLowerCase()}.</p> : <div className="call-trace-columns">
+        <CallTracePanel title="Callers" description="Call this symbol" state={callers} onNavigate={onNavigate} onRetry={onRetryTraces} />
+        <CallTracePanel title="Callees" description="Called by this symbol" state={callees} onNavigate={onNavigate} onRetry={onRetryTraces} />
+      </div>}
+    </section>
   </div>
+}
+
+function CallTracePanel({ title, description, state, onNavigate, onRetry }: {
+  title: string
+  description: string
+  state: CallTraceState | null
+  onNavigate: (symbol: CallTraceResult['results'][number]['symbol']) => void
+  onRetry: () => void
+}) {
+  const hits = state?.status === 'loaded' ? state.result.results : []
+  return <section className={`call-trace-panel ${title.toLowerCase()}`} aria-label={title}>
+    <header><strong>{title}</strong><span>{description}</span></header>
+    {!state && <div className="call-trace-state"><Icon name="spinner" />Loading {title.toLowerCase()}…</div>}
+    {state?.status === 'error' && <div className="call-trace-state call-trace-error" role="alert"><span>{state.message}</span><button type="button" onClick={onRetry}>Retry</button></div>}
+    {state?.status === 'loaded' && hits.length === 0 && <div className="call-trace-state">No {title.toLowerCase()} found.</div>}
+    {hits.map(hit => <button type="button" className="call-trace-row" key={`${hit.relationship.id}:${hit.symbol.id}`} onClick={() => onNavigate(hit.symbol)}>
+      <span className="call-trace-row-top"><strong>{hit.symbol.name}</strong><span>{hit.symbol.type}</span></span>
+      <span className="call-trace-path" title={hit.symbol.filePath}>{hit.symbol.filePath}</span>
+      <span className="call-trace-row-bottom"><span>Lines {hit.symbol.startLine}–{hit.symbol.endLine}</span><span>{hit.relationship.type}</span></span>
+    </button>)}
+  </section>
 }
 
 function TypeGlyph({ type }: { type: SymbolType }) {

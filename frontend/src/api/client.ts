@@ -78,6 +78,34 @@ export interface RepositorySymbolDetails extends RepositorySymbolSummary {
   sourceContext: { startLine: number; endLine: number; content: string } | null
 }
 
+export interface GraphSymbolReference {
+  id: string
+  name: string
+  type: string
+  fileId: string
+  filePath: string
+  language: string | null
+  startLine: number
+  endLine: number
+  parentSymbolId: string | null
+  parentSymbolName: string | null
+  parentSymbolType: string | null
+}
+
+export interface CallTraceResult {
+  repositoryId: string
+  direction: 'INCOMING' | 'OUTGOING'
+  target: GraphSymbolReference
+  maxDepth: number
+  relationshipTypes: string[]
+  results: Array<{
+    symbol: GraphSymbolReference
+    depth: number
+    direct: boolean
+    relationship: { id: string; type: string; fromSymbolId: string; toSymbolId: string }
+  }>
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response
   try {
@@ -122,6 +150,14 @@ export const repositoryApi = {
   getSymbol: (repositoryId: string, symbolId: string, signal?: AbortSignal) =>
     request<RepositorySymbolDetails>(`/repositories/${encodeURIComponent(repositoryId)}/query/symbol`, {
       method: 'POST', body: JSON.stringify({ symbolId }), signal,
+    }),
+  getCallers: (repositoryId: string, symbolId: string, signal?: AbortSignal) =>
+    request<CallTraceResult>(`/repositories/${encodeURIComponent(repositoryId)}/trace/callers`, {
+      method: 'POST', body: JSON.stringify({ symbolId, maxDepth: 1 }), signal,
+    }),
+  getCallees: (repositoryId: string, symbolId: string, signal?: AbortSignal) =>
+    request<CallTraceResult>(`/repositories/${encodeURIComponent(repositoryId)}/trace/callees`, {
+      method: 'POST', body: JSON.stringify({ symbolId, maxDepth: 1 }), signal,
     }),
 }
 
