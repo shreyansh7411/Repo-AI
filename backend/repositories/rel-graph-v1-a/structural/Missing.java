@@ -1,1 +1,0 @@
-class MissingChild extends NoSuchBase implements NoSuchContract {}

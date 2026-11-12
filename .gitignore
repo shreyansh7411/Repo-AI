@@ -86,6 +86,4 @@ agent_prompts/
 phases/
 
 # Local cloned repositories used for indexing/testing
-backend/repositories/Ai-Finance-Controller/
-backend/repositories/footinfo/
-backend/repositories/Ai-Finance-Controller-Test/
+/backend/repositories/

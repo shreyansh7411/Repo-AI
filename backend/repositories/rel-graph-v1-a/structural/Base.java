@@ -1,1 +1,0 @@
-package structural; public class Base {}
