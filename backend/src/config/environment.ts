@@ -1,7 +1,8 @@
 import path from "node:path";
 
 export function validateProductionEnvironment(): void {
-    const sameSite = (process.env.AUTH_COOKIE_SAME_SITE || "lax").toLowerCase();
+    const defaultSameSite = process.env.NODE_ENV === "production" ? "none" : "lax";
+    const sameSite = (process.env.AUTH_COOKIE_SAME_SITE || defaultSameSite).toLowerCase();
     if (!["lax", "strict", "none"].includes(sameSite)) {
         throw new Error("AUTH_COOKIE_SAME_SITE must be lax, strict, or none");
     }
@@ -25,6 +26,9 @@ export function validateProductionEnvironment(): void {
     }
     if (parsedOrigin.protocol !== "https:" || parsedOrigin.origin !== origin) {
         throw new Error("CORS_ORIGIN must be a valid HTTPS origin");
+    }
+    if (parsedOrigin.hostname.endsWith(".onrender.com") && sameSite !== "none") {
+        throw new Error("AUTH_COOKIE_SAME_SITE must be none when using a Render-hosted frontend origin");
     }
 
     const storagePath = process.env.REPOSITORY_STORAGE_PATH;

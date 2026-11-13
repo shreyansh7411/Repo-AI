@@ -43,7 +43,8 @@ export async function getSessionUserId(token: string): Promise<string | null> {
 }
 
 function cookieSameSite(): "lax" | "strict" | "none" {
-    const value = (process.env.AUTH_COOKIE_SAME_SITE || "lax").toLowerCase();
+    const defaultValue = process.env.NODE_ENV === "production" ? "none" : "lax";
+    const value = (process.env.AUTH_COOKIE_SAME_SITE || defaultValue).toLowerCase();
     if (value === "lax" || value === "strict" || value === "none") return value;
     throw new Error("AUTH_COOKIE_SAME_SITE must be lax, strict, or none");
 }

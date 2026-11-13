@@ -98,6 +98,7 @@ Set these backend environment variables in Render:
 | `DATABASE_URL` | Render PostgreSQL internal URL when services share a region |
 | `DB_SSL_MODE` | `disable` for Render's internal URL; `require` for external URL |
 | `CORS_ORIGIN` | Exact HTTPS frontend origin, without a path or trailing slash |
+| `AUTH_COOKIE_SAME_SITE` | `none` for Render-hosted frontend/backend origins |
 | `REPOSITORY_STORAGE_PATH` | `/var/data/repositories` |
 
 Attach a persistent disk to the backend Web Service mounted at `/var/data`,
@@ -110,6 +111,9 @@ URL for same-region traffic; external PostgreSQL URLs require TLS.
 Set the frontend build-time variable `VITE_API_BASE_URL` to
 `https://<backend-service>.onrender.com/api`. Production CORS allows only the
 configured frontend origin; local development retains permissive CORS.
+For Render's `onrender.com` service domains, set
+`AUTH_COOKIE_SAME_SITE=none`; production cookies are Secure and must allow
+cross-site requests between the frontend and backend services.
 
 Initialize a fresh PostgreSQL database before serving application traffic. Run
 `cd backend && npm run db:migrate` as a Render pre-deploy command or manually

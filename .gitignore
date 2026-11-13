@@ -87,3 +87,4 @@ phases/
 
 # Local cloned repositories used for indexing/testing
 /backend/repositories/
+/backend/.env.render.local
