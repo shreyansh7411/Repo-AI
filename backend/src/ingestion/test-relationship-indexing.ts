@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pool } from "../config/database.js";
@@ -150,6 +151,12 @@ async function relationshipNames(repositoryId: string) {
 }
 
 async function run() {
+    const owner = await pool.query<{ id: string }>(
+        `INSERT INTO users (name, email, password_hash)
+         VALUES ('Relationship Test', $1, 'test-only-hash') RETURNING id`,
+        [`relationship-test-${randomUUID()}@example.test`]
+    );
+    const ownerUserId = owner.rows[0].id;
     const repoAName = "rel-graph-v1-a";
     const repoBName = "rel-graph-v1-b";
     const repoAUrl = "https://example.invalid/rel-graph-v1-a.git";
@@ -184,9 +191,9 @@ async function run() {
         "PaymentService.java": javaPayment
     });
 
-    const first = await indexRepository(repoAName, repoAUrl);
-    const second = await indexRepository(repoAName, repoAUrl);
-    const other = await indexRepository(repoBName, repoBUrl);
+    const first = await indexRepository(repoAName, repoAUrl, ownerUserId);
+    const second = await indexRepository(repoAName, repoAUrl, ownerUserId);
+    const other = await indexRepository(repoBName, repoBUrl, ownerUserId);
 
     assert.equal(first.repositoryId, second.repositoryId);
     assert.equal(first.relationshipCount, second.relationshipCount);

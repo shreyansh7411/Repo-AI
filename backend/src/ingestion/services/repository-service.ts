@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import { pool } from "../../config/database.js";
 import { cloneRepository } from "./repository-cloner.js";
 import {
@@ -21,7 +22,8 @@ import { replaceCodeChunks } from "./code-chunk-repository.js";
 
 export async function indexRepository(
     name: string,
-    url: string
+    url: string,
+    ownerUserId: string
 ): Promise<{
     repositoryId: string;
     fileCount: number;
@@ -32,16 +34,19 @@ export async function indexRepository(
     const repositoryName = validateRepositoryName(name);
     const cloneUrl = validateGitUrl(url);
     const storedUrl = sanitizeGitUrl(cloneUrl);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ownerUserId)) {
+        throw new Error("Authenticated user is required to index a repository");
+    }
 
     const existingRepository = await pool.query<{ id: string }>(
         `
         SELECT id
         FROM repositories
-        WHERE name = $1 AND url = $2
+        WHERE name = $1 AND url = $2 AND owner_user_id = $3
         ORDER BY created_at DESC
         LIMIT 1
         `,
-        [repositoryName, storedUrl]
+        [repositoryName, storedUrl, ownerUserId]
     );
 
     let createdRepository = false;
@@ -49,11 +54,11 @@ export async function indexRepository(
         ? existingRepository
         : await pool.query<{ id: string }>(
             `
-            INSERT INTO repositories (name, url)
-            VALUES ($1, $2)
+            INSERT INTO repositories (name, url, owner_user_id)
+            VALUES ($1, $2, $3)
             RETURNING id
             `,
-            [repositoryName, storedUrl]
+            [repositoryName, storedUrl, ownerUserId]
         );
 
     createdRepository = !existingRepository.rows[0];
@@ -134,9 +139,9 @@ export async function indexRepository(
                 `
                 UPDATE repositories
                 SET indexed_at = CURRENT_TIMESTAMP
-                WHERE id = $1
+                WHERE id = $1 AND owner_user_id = $2
                 `,
-                [repositoryId]
+                [repositoryId, ownerUserId]
             );
 
             await graphClient.query("COMMIT");
@@ -163,8 +168,8 @@ export async function indexRepository(
     } catch (error) {
         if (createdRepository) {
             await pool.query(
-                "DELETE FROM repositories WHERE id = $1",
-                [repositoryId]
+                "DELETE FROM repositories WHERE id = $1 AND owner_user_id = $2",
+                [repositoryId, ownerUserId]
             );
         }
 
@@ -183,7 +188,7 @@ export interface RepositoryListItem {
     indexedAt: string | null;
 }
 
-export async function listRepositories(): Promise<RepositoryListItem[]> {
+export async function listRepositories(ownerUserId: string): Promise<RepositoryListItem[]> {
     const result = await pool.query<{
         repositoryId: string; name: string; url: string | null; createdAt: Date; indexedAt: Date | null;
         fileCount: string; symbolCount: string;
@@ -192,16 +197,75 @@ export async function listRepositories(): Promise<RepositoryListItem[]> {
                 (SELECT COUNT(*)::text FROM files f WHERE f.repository_id=r.id) AS "fileCount",
                 (SELECT COUNT(*)::text FROM symbols s WHERE s.repository_id=r.id) AS "symbolCount"
          FROM repositories r
-         ORDER BY COALESCE(r.indexed_at, r.created_at) DESC, r.name, r.id`
+         WHERE r.owner_user_id = $1
+         ORDER BY COALESCE(r.indexed_at, r.created_at) DESC, r.name, r.id`,
+        [ownerUserId]
     );
     return result.rows.map(row => ({
         repositoryId: row.repositoryId,
         name: row.name,
-        url: row.url,
+        url: row.url ? sanitizeGitUrl(row.url) : null,
         indexingStatus: row.indexedAt ? "INDEXED" : "NOT_INDEXED",
         fileCount: Number(row.fileCount),
         symbolCount: Number(row.symbolCount),
         createdAt: row.createdAt.toISOString(),
         indexedAt: row.indexedAt?.toISOString() ?? null
     }));
+}
+
+export interface RepositoryDetails extends RepositoryListItem {
+    branch: string | null;
+    commitHash: string | null;
+}
+
+export async function getRepository(repositoryId: string, ownerUserId: string): Promise<RepositoryDetails | null> {
+    const result = await pool.query<{
+        repositoryId: string; name: string; url: string | null; branch: string | null; commitHash: string | null;
+        createdAt: Date; indexedAt: Date | null; fileCount: string; symbolCount: string;
+    }>(
+        `SELECT r.id AS "repositoryId", r.name, r.url, r.branch, r.commit_hash AS "commitHash",
+                r.created_at AS "createdAt", r.indexed_at AS "indexedAt",
+                (SELECT COUNT(*)::text FROM files f WHERE f.repository_id=r.id) AS "fileCount",
+                (SELECT COUNT(*)::text FROM symbols s WHERE s.repository_id=r.id) AS "symbolCount"
+         FROM repositories r
+         WHERE r.id = $1 AND r.owner_user_id = $2`,
+        [repositoryId, ownerUserId]
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+        repositoryId: row.repositoryId, name: row.name, url: row.url ? sanitizeGitUrl(row.url) : null, branch: row.branch,
+        commitHash: row.commitHash, indexingStatus: row.indexedAt ? "INDEXED" : "NOT_INDEXED",
+        fileCount: Number(row.fileCount), symbolCount: Number(row.symbolCount),
+        createdAt: row.createdAt.toISOString(), indexedAt: row.indexedAt?.toISOString() ?? null
+    };
+}
+
+export async function deleteRepository(repositoryId: string, ownerUserId: string): Promise<{ deleted: boolean; storageCleanupPending: boolean }> {
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+        const deleted = await client.query<{ id: string }>(
+            "DELETE FROM repositories WHERE id = $1 AND owner_user_id = $2 RETURNING id",
+            [repositoryId, ownerUserId]
+        );
+        if (!deleted.rows[0]) {
+            await client.query("ROLLBACK");
+            return { deleted: false, storageCleanupPending: false };
+        }
+        await client.query("COMMIT");
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+
+    try {
+        await rm(getRepositoryClonePath(repositoryId), { recursive: true, force: true });
+        return { deleted: true, storageCleanupPending: false };
+    } catch {
+        console.error("Repository clone cleanup failed after database deletion.");
+        return { deleted: true, storageCleanupPending: true };
+    }
 }

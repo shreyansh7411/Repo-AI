@@ -118,6 +118,24 @@ to the migration module, enables PostgreSQL's `vector` extension first, and
 applies pending migrations transactionally. The database user must have
 permission to create the extension.
 
+### Authentication and repository ownership
+
+The backend provides `POST /api/auth/register`, `POST /api/auth/login`,
+`POST /api/auth/logout`, and `GET /api/auth/me`. Sessions are signed JWTs held
+in HttpOnly cookies. All `/api/repositories` routes require authentication;
+repository list, creation/indexing, lookup, and deletion are scoped to the
+authenticated user. The browser must send credentialed requests to the API.
+
+Migration `004_repository_ownership.sql` adds a nullable `owner_user_id` and
+index without changing or deleting existing repository data. Legacy rows remain
+inaccessible through repository APIs until assigned by the trusted operator.
+After creating the original account, the operator can get its UUID from the
+registration response or `users` table, set `LEGACY_REPOSITORY_OWNER_ID` in the
+backend environment, and run `cd backend && npm run db:assign-legacy-owner`.
+That one-time command assigns only rows whose owner is still NULL and requires
+the selected UUID to exist in `users`. Remove the temporary variable afterward.
+Public registrants cannot invoke this bootstrap operation.
+
 ## Core capabilities
 
 The backend exposes repository ingestion under `/api/repositories` and a

@@ -4,11 +4,18 @@ import { generateEmbeddingsHandler, semanticSearchHandler } from "../embeddings/
 import { askHandler, retrieveHandler } from "../retrieval/retrieval-controller.js";
 import { callersHandler, calleesHandler, impactHandler, pathHandler } from "../graph/graph-controller.js";
 import { fileQueryHandler, impactQueryHandler, pathQueryHandler, searchQueryHandler, symbolQueryHandler, symbolsQueryHandler, traceQueryHandler } from "../query/repository-query-controller.js";
+import { requireAuth } from "../auth/auth-middleware.js";
+import { requireRepositoryOwner } from "./repository-ownership.js";
+import { deleteRepositoryHandler, getRepositoryHandler } from "./repository-controller.js";
 
 const router = Router();
 
+router.use(requireAuth);
+router.param("repositoryId", requireRepositoryOwner);
 router.get("/", listRepositoriesHandler);
 router.post("/index", indexRepositoryHandler);
+router.get("/:repositoryId", getRepositoryHandler);
+router.delete("/:repositoryId", deleteRepositoryHandler);
 router.post("/:repositoryId/embeddings", generateEmbeddingsHandler);
 router.post("/:repositoryId/search", semanticSearchHandler);
 router.post("/:repositoryId/retrieve", retrieveHandler);
