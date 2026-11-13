@@ -1,5 +1,8 @@
 import type { AuthUser, RepositorySummary } from '../api/client'
+import { NavLink } from 'react-router-dom'
 import { Icon } from './Icons'
+
+type WorkspaceView = 'dashboard' | 'explorer' | 'symbols' | 'callers' | 'impact' | 'paths' | 'assistant'
 
 interface Props {
   repositories: RepositorySummary[]
@@ -7,8 +10,7 @@ interface Props {
   loading: boolean
   error: string | null
   connectionState: 'checking' | 'connected' | 'error'
-  activeView: 'search' | 'symbols'
-  onViewChange: (view: 'search' | 'symbols') => void
+  activeView: WorkspaceView
   onSelect: (repositoryId: string) => void
   onRefresh: () => void
   onAdd: () => void
@@ -16,7 +18,7 @@ interface Props {
   onLogout: () => void
 }
 
-export function RepositorySidebar({ repositories, selectedId, loading, error, connectionState, activeView, onViewChange, onSelect, onRefresh, onAdd, user, onLogout }: Props) {
+export function RepositorySidebar({ repositories, selectedId, loading, error, connectionState, activeView, onSelect, onRefresh, onAdd, user, onLogout }: Props) {
   return <aside className="sidebar">
     <div className="brand-lockup">
       <div className="brand-mark"><Icon name="brand" size={22} /></div>
@@ -34,11 +36,16 @@ export function RepositorySidebar({ repositories, selectedId, loading, error, co
       <Icon name="plus" size={17} /><span>Add repository</span><span className="shortcut">⌘ K</span>
     </button>
 
-    {selectedId && <nav className="workspace-nav" aria-label="Repository views">
+    <nav className="workspace-nav" aria-label="Repository views">
       <span className="nav-section-label">EXPLORE</span>
-      <button type="button" className={`workspace-nav-item${activeView === 'search' ? ' active' : ''}`} onClick={() => onViewChange('search')} aria-current={activeView === 'search' ? 'page' : undefined}><Icon name="search" size={16} />Search</button>
-      <button type="button" className={`workspace-nav-item${activeView === 'symbols' ? ' active' : ''}`} onClick={() => onViewChange('symbols')} aria-current={activeView === 'symbols' ? 'page' : undefined}><Icon name="code" size={16} />Symbols</button>
-    </nav>}
+      <NavLink to="/dashboard" className={`workspace-nav-item${activeView === 'dashboard' ? ' active' : ''}`} aria-current={activeView === 'dashboard' ? 'page' : undefined}><Icon name="folder" size={16} />Dashboard</NavLink>
+      <NavLink to="/explorer" className={`workspace-nav-item${activeView === 'explorer' ? ' active' : ''}`} aria-current={activeView === 'explorer' ? 'page' : undefined}><Icon name="search" size={16} />Search</NavLink>
+      <NavLink to="/symbols" className={`workspace-nav-item${activeView === 'symbols' ? ' active' : ''}`} aria-current={activeView === 'symbols' ? 'page' : undefined}><Icon name="code" size={16} />Symbols</NavLink>
+      <NavLink to="/callers" className={`workspace-nav-item${activeView === 'callers' ? ' active' : ''}`} aria-current={activeView === 'callers' ? 'page' : undefined}><Icon name="arrow" size={16} />Callers</NavLink>
+      <NavLink to="/impact" className={`workspace-nav-item${activeView === 'impact' ? ' active' : ''}`} aria-current={activeView === 'impact' ? 'page' : undefined}><Icon name="refresh" size={16} />Impact</NavLink>
+      <NavLink to="/paths" className={`workspace-nav-item${activeView === 'paths' ? ' active' : ''}`} aria-current={activeView === 'paths' ? 'page' : undefined}><Icon name="folder" size={16} />Paths</NavLink>
+      <NavLink to="/assistant" className={`workspace-nav-item${activeView === 'assistant' ? ' active' : ''}`} aria-current={activeView === 'assistant' ? 'page' : undefined}><Icon name="brand" size={16} />Assistant</NavLink>
+    </nav>
 
     <div className="repository-list" aria-label="Repositories">
       {loading && repositories.length === 0 && <div className="sidebar-state"><Icon name="spinner" />Loading repositories…</div>}

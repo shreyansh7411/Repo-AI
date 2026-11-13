@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { repositoryApi, type RepositoryIndexResult, type RepositorySearchResult, type RepositorySummary, type SearchMode } from './api/client'
 import { AddRepositoryDialog } from './components/AddRepositoryDialog'
 import { RepositorySidebar } from './components/RepositorySidebar'
@@ -10,7 +11,9 @@ import './App.css'
 
 const SELECTED_REPOSITORY_KEY = 'repo-ai:selected-repository'
 
-function App() {
+export type WorkspaceView = 'dashboard' | 'explorer' | 'symbols' | 'callers' | 'impact' | 'paths' | 'assistant'
+
+function App({ view }: { view: WorkspaceView }) {
   const { user, logout } = useAuth()
   const [repositories, setRepositories] = useState<RepositorySummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(() => localStorage.getItem(SELECTED_REPOSITORY_KEY))
@@ -23,7 +26,6 @@ function App() {
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [searchResult, setSearchResult] = useState<RepositorySearchResult | null>(null)
-  const [activeView, setActiveView] = useState<'search' | 'symbols'>('search')
 
   const activeRepository = useMemo(() => repositories.find(repository => repository.repositoryId === selectedId) ?? null, [repositories, selectedId])
 
@@ -119,8 +121,7 @@ function App() {
       loading={listLoading}
       error={listError}
       connectionState={connectionState}
-      activeView={activeView}
-      onViewChange={setActiveView}
+      activeView={view}
       onSelect={id => { setSelectedId(id); setSearchResult(null); setSearchError(null); setNotice(null) }}
       onRefresh={() => void loadRepositories()}
       onAdd={() => { setIndexError(null); setDialogOpen(true) }}
@@ -129,7 +130,7 @@ function App() {
     />
     <div className="main-shell">
       {notice && <div className="success-toast" role="status"><span className="success-check">✓</span>{notice}<button type="button" onClick={() => setNotice(null)} aria-label="Dismiss message"><Icon name="close" size={15} /></button></div>}
-      {activeRepository && activeView === 'search' ? <SearchWorkspace
+      {activeRepository && view === 'explorer' ? <SearchWorkspace
         key={activeRepository.repositoryId}
         repositoryName={activeRepository.name}
         repositoryUrl={activeRepository.url}
@@ -139,11 +140,11 @@ function App() {
         searching={searching}
         error={searchError}
         onSearch={(query, mode) => void searchRepository(query, mode)}
-      /> : activeRepository ? <SymbolsWorkspace
+      /> : activeRepository && (view === 'symbols' || view === 'callers') ? <SymbolsWorkspace
         key={`symbols-${activeRepository.repositoryId}`}
         repositoryId={activeRepository.repositoryId}
         repositoryName={activeRepository.name}
-      /> : <main className="main-content welcome-state">
+      /> : activeRepository && view === 'dashboard' ? <RepositoryDashboard repository={activeRepository} /> : activeRepository ? <FeaturePlaceholder view={view} /> : <main className="main-content welcome-state">
         <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>Overview</strong></div><div className={`backend-status ${connectionState}`}><span className="status-dot" />{connectionState === 'connected' ? 'Backend connected' : connectionState === 'checking' ? 'Connecting…' : 'Backend unavailable'}</div></header>
         <section className="welcome-card"><div className="welcome-icon"><Icon name="brand" size={28} /></div><p className="eyebrow">REPOSITORY UNDERSTANDING AI</p><h1>Make your codebase<br /><span>make sense.</span></h1><p className="welcome-copy">Index a Git repository to explore its source code with grounded, traceable evidence.</p>
           {listLoading ? <div className="loading-card"><Icon name="spinner" />Loading your workspace…</div> : listError ? <div className="inline-error" role="alert">{listError}<button type="button" className="text-action" onClick={() => void loadRepositories()}>Retry</button></div> : <button className="button-primary" type="button" onClick={() => { setIndexError(null); setDialogOpen(true) }}><Icon name="plus" />Add your first repository <Icon name="arrow" size={16} /></button>}
@@ -152,6 +153,34 @@ function App() {
     </div>
     {dialogOpen && <AddRepositoryDialog busy={indexing} error={indexError} onClose={() => { if (!indexing) setDialogOpen(false) }} onSubmit={(name, url) => void addRepository(name, url)} />}
   </div>
+}
+
+function RepositoryDashboard({ repository }: { repository: RepositorySummary }) {
+  return <main className="main-content">
+    <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>Dashboard</strong></div><span className="backend-status connected"><span className="status-dot" />{repository.indexingStatus === 'INDEXED' ? 'Indexed' : 'Repository selected'}</span></header>
+    <section className="welcome-card">
+      <div className="welcome-icon"><Icon name="folder" size={26} /></div>
+      <p className="eyebrow">SELECTED REPOSITORY</p>
+      <h1>{repository.name}</h1>
+      <p className="welcome-copy">{repository.url}</p>
+      <p className="welcome-copy">{repository.fileCount.toLocaleString()} files · {repository.symbolCount.toLocaleString()} symbols</p>
+      <Link className="button-primary dashboard-action" to="/explorer"><Icon name="search" />Search this repository <Icon name="arrow" size={16} /></Link>
+    </section>
+  </main>
+}
+
+function FeaturePlaceholder({ view }: { view: WorkspaceView }) {
+  const content: Record<'impact' | 'paths' | 'assistant', { title: string; description: string }> = {
+    impact: { title: 'Impact analysis', description: 'This view is reserved for repository impact analysis.' },
+    paths: { title: 'Dependency paths', description: 'This view is reserved for exploring paths between repository symbols.' },
+    assistant: { title: 'Assistant', description: 'The repository assistant workspace will be available here in a future update.' },
+  }
+  if (!(view in content)) return null
+  const feature = content[view as keyof typeof content]
+  return <main className="main-content">
+    <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>{feature.title}</strong></div></header>
+    <section className="welcome-card"><p className="eyebrow">COMING LATER</p><h1>{feature.title}</h1><p className="welcome-copy">{feature.description}</p></section>
+  </main>
 }
 
 export default App

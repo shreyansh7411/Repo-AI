@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from './useAuth'
-import { navigate } from './navigation'
 import { Icon } from '../components/Icons'
 import './AuthPage.css'
 
@@ -10,6 +10,7 @@ interface Props {
 
 export function AuthPage({ mode }: Props) {
   const { login, register } = useAuth()
+  const navigate = useNavigate()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -48,7 +49,7 @@ export function AuthPage({ mode }: Props) {
     try {
       if (isRegister) await register(name.trim(), normalizedEmail, password)
       else await login(normalizedEmail, password)
-      navigate('/')
+      navigate('/dashboard', { replace: true })
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Authentication could not be completed.')
     } finally {
@@ -59,10 +60,10 @@ export function AuthPage({ mode }: Props) {
   return <main className="auth-page">
     <div className="auth-backdrop-glow" />
     <section className="auth-card" aria-labelledby="auth-title">
-      <a className="auth-brand" href="#/" onClick={event => { event.preventDefault(); navigate('/') }}>
+      <Link className="auth-brand" to="/dashboard">
         <span className="auth-brand-mark"><Icon name="brand" size={22} /></span>
         <span><strong>repo<span>·</span>ai</strong><small>REPOSITORY INTELLIGENCE</small></span>
-      </a>
+      </Link>
 
       <div className="auth-intro">
         <p className="eyebrow">PRIVATE CODE WORKSPACE</p>
@@ -100,7 +101,7 @@ export function AuthPage({ mode }: Props) {
 
       <p className="auth-switch">
         {isRegister ? 'Already have an account?' : 'New to Repo-AI?'}{' '}
-        <a href={isRegister ? '#/login' : '#/register'} onClick={event => { event.preventDefault(); navigate(isRegister ? '/login' : '/register') }}>{isRegister ? 'Sign in' : 'Create an account'}</a>
+        <Link to={isRegister ? '/login' : '/register'}>{isRegister ? 'Sign in' : 'Create an account'}</Link>
       </p>
       <div className="auth-security-note"><span className="auth-security-dot" />Sessions use secure, HttpOnly cookies.</div>
     </section>
