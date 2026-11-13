@@ -5,11 +5,13 @@ import { RepositorySidebar } from './components/RepositorySidebar'
 import { SearchWorkspace } from './components/SearchWorkspace'
 import { SymbolsWorkspace } from './components/SymbolsWorkspace'
 import { Icon } from './components/Icons'
+import { useAuth } from './auth/useAuth'
 import './App.css'
 
 const SELECTED_REPOSITORY_KEY = 'repo-ai:selected-repository'
 
 function App() {
+  const { user, logout } = useAuth()
   const [repositories, setRepositories] = useState<RepositorySummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(() => localStorage.getItem(SELECTED_REPOSITORY_KEY))
   const [listLoading, setListLoading] = useState(true)
@@ -122,6 +124,8 @@ function App() {
       onSelect={id => { setSelectedId(id); setSearchResult(null); setSearchError(null); setNotice(null) }}
       onRefresh={() => void loadRepositories()}
       onAdd={() => { setIndexError(null); setDialogOpen(true) }}
+      user={user!}
+      onLogout={() => { void logout().catch(() => undefined) }}
     />
     <div className="main-shell">
       {notice && <div className="success-toast" role="status"><span className="success-check">✓</span>{notice}<button type="button" onClick={() => setNotice(null)} aria-label="Dismiss message"><Icon name="close" size={15} /></button></div>}

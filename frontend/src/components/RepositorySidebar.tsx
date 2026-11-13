@@ -1,4 +1,4 @@
-import type { RepositorySummary } from '../api/client'
+import type { AuthUser, RepositorySummary } from '../api/client'
 import { Icon } from './Icons'
 
 interface Props {
@@ -12,9 +12,11 @@ interface Props {
   onSelect: (repositoryId: string) => void
   onRefresh: () => void
   onAdd: () => void
+  user: AuthUser
+  onLogout: () => void
 }
 
-export function RepositorySidebar({ repositories, selectedId, loading, error, connectionState, activeView, onViewChange, onSelect, onRefresh, onAdd }: Props) {
+export function RepositorySidebar({ repositories, selectedId, loading, error, connectionState, activeView, onViewChange, onSelect, onRefresh, onAdd, user, onLogout }: Props) {
   return <aside className="sidebar">
     <div className="brand-lockup">
       <div className="brand-mark"><Icon name="brand" size={22} /></div>
@@ -58,6 +60,7 @@ export function RepositorySidebar({ repositories, selectedId, loading, error, co
     </div>
 
     <div className="sidebar-footer">
+      <div className="signed-in-user"><span className="user-avatar">{user.name.slice(0, 1).toUpperCase()}</span><span className="signed-in-copy"><strong>{user.name}</strong><small>{user.email}</small></span><button className="sign-out-button" type="button" onClick={onLogout}>Sign out</button></div>
       <span className="connection-indicator"><span className={`status-dot ${connectionState === 'connected' ? 'ready' : connectionState === 'error' ? 'offline' : 'pending'}`} />{connectionState === 'connected' ? 'API connected' : connectionState === 'error' ? 'API unavailable' : 'Connecting to API'}</span>
       <span className="version-label">MILESTONE 9A</span>
     </div>

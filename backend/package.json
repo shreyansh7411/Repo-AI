@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "parser:test": "tsx src/parser/test-parser.ts",
     "parser:test-symbols": "tsx src/parser/test-symbol-extractor.ts",

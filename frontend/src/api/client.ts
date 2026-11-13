@@ -1,5 +1,26 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api').replace(/\/$/, '')
 
+export interface AuthUser {
+  id: string
+  name: string
+  email: string
+  createdAt: string
+}
+
+export interface AuthResponse {
+  user: AuthUser
+}
+
+export class ApiError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 export interface RepositorySummary {
   repositoryId: string
   name: string
@@ -111,15 +132,21 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
+      credentials: 'include',
       headers: { ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...init.headers },
     })
   } catch {
-    throw new Error(`Cannot reach the repository API at ${API_BASE_URL}. Check that the backend is running.`)
+    throw new Error(`The browser could not complete a network request to ${API_BASE_URL}. Check that the backend is running and that its CORS_ORIGIN allows this frontend origin.`)
   }
 
   const contentType = response.headers.get('content-type') || ''
   const payload: unknown = contentType.includes('application/json') ? await response.json() : await response.text()
-  if (!response.ok) throw new Error(extractMessage(payload, response.status))
+  if (!response.ok) {
+    if (response.status === 401 && !path.startsWith('/auth/')) {
+      window.dispatchEvent(new CustomEvent('repo-ai:unauthorized'))
+    }
+    throw new ApiError(extractMessage(payload, response.status), response.status)
+  }
   return payload as T
 }
 
@@ -159,6 +186,15 @@ export const repositoryApi = {
     request<CallTraceResult>(`/repositories/${encodeURIComponent(repositoryId)}/trace/callees`, {
       method: 'POST', body: JSON.stringify({ symbolId, maxDepth: 1 }), signal,
     }),
+}
+
+export const authApi = {
+  register: (name: string, email: string, password: string) =>
+    request<AuthResponse>('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
+  login: (email: string, password: string) =>
+    request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  logout: () => request<{ message: string }>('/auth/logout', { method: 'POST' }),
+  me: () => request<AuthResponse>('/auth/me'),
 }
 
 export function repositoryNameFromUrl(value: string): string {

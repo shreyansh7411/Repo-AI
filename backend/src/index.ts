@@ -11,9 +11,21 @@ validateProductionEnvironment();
 const app = express();
 app.set("trust proxy", 1);
 const PORT = Number(process.env.PORT) || 5000;
+const configuredFrontendOrigin = process.env.CORS_ORIGIN || "http://localhost:5173";
 
 app.use(cors({
-    origin: process.env.CORS_ORIGIN || "http://localhost:5173",
+    origin(origin, callback) {
+        if (!origin || origin === configuredFrontendOrigin) {
+            callback(null, true);
+            return;
+        }
+        const isLocalDevelopmentOrigin = /^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):\d+$/.test(origin);
+        if (process.env.NODE_ENV !== "production" && isLocalDevelopmentOrigin) {
+            callback(null, true);
+            return;
+        }
+        callback(null, false);
+    },
     credentials: true
 }));
 app.use(express.json());

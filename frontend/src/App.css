@@ -35,6 +35,14 @@
 .sidebar-state { display: flex; align-items: flex-start; gap: 8px; padding: 12px 9px; color: #9ba7af; font-size: 11px; line-height: 1.6; }
 .error-text { color: #e59b94; }
 .sidebar-footer { display: flex; flex-direction: column; gap: 12px; padding: 14px 10px 0; border-top: 1px solid #252c34; }
+.signed-in-user { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.user-avatar { display: grid; flex: 0 0 25px; height: 25px; place-items: center; border: 1px solid #436258; border-radius: 8px; color: #a7e2c8; background: #20312d; font-size: 10px; font-weight: 700; }
+.signed-in-copy { display: grid; min-width: 0; flex: 1; gap: 3px; }
+.signed-in-copy strong, .signed-in-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.signed-in-copy strong { color: #d3dfdc; font-size: 9px; font-weight: 600; }
+.signed-in-copy small { color: #78868d; font-size: 8px; }
+.sign-out-button { flex: 0 0 auto; padding: 5px 6px; border: 1px solid transparent; border-radius: 5px; color: #96a5a7; background: transparent; font-size: 8px; cursor: pointer; }
+.sign-out-button:hover { border-color: #3b4b4d; color: #d8e4e1; background: #1b252b; }
 .connection-indicator { display: flex; align-items: center; gap: 7px; color: #a9b4bd; font-size: 10px; }
 .version-label { color: #626e78; font-size: 8px; font-weight: 700; letter-spacing: 1.2px; }
 .status-dot { display: inline-block; flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: #84919b; }
@@ -264,7 +272,8 @@
   .workspace-nav { display: grid; grid-template-columns: 1fr 1fr; padding: 10px 0 8px; }
   .nav-section-label { grid-column: 1 / -1; }
   .repository-row { padding: 7px; }
-  .sidebar-footer { flex-direction: row; justify-content: space-between; padding: 9px 4px 0; }
+  .sidebar-footer { flex-direction: row; flex-wrap: wrap; justify-content: space-between; padding: 9px 4px 0; }
+  .signed-in-user { flex: 1 1 100%; }
   .main-content { min-height: 70vh; padding: 0 20px 23px; }
   .workspace-header { min-height: 54px; }
   .repo-overview { gap: 15px; padding: 25px 0 20px; }
