@@ -42,7 +42,7 @@ projects may have their own build files and test resources.
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 22
 - npm
 - PostgreSQL
 - The PostgreSQL `vector` extension for embedding/vector search features
@@ -62,6 +62,10 @@ Configure the values for the local PostgreSQL instance:
 | `DB_NAME` | Database name | `repo-ai` |
 | `DB_USER` | Database user | `postgres` |
 | `DB_PASSWORD` | Database password | Local secret |
+| `DATABASE_URL` | Production PostgreSQL connection string; optional locally | Render PostgreSQL internal URL |
+| `DB_SSL_MODE` | Production TLS policy: `disable`, `require`, or `verify-full` | `disable` locally; `require` for external database URLs |
+| `CORS_ORIGIN` | Exact frontend origin allowed by production API | `https://<frontend>.onrender.com` |
+| `REPOSITORY_STORAGE_PATH` | Absolute directory for cloned repositories | `backend/repositories` default locally |
 | `GEMINI_API_KEY` | Gemini access key | Optional |
 | `GEMINI_EMBEDDING_MODEL` | Embedding model | `gemini-embedding-2` |
 | `GEMINI_GENERATION_MODEL` | Generation model | `gemini-3.8-flash` |
@@ -71,6 +75,48 @@ Never commit `backend/.env` or any other credentials. The root `.gitignore`
 ignores `.env` files, passwords, API keys, certificates, private keys,
 credential files, local databases, dependencies, logs, caches, and build
 output. Share configuration changes by updating `.env.example`, not `.env`.
+
+## Render deployment
+
+The application currently has no authentication. Anyone who can reach the
+deployment can use its repository indexing and query APIs. Deploy it only for
+the intended personal-use environment and account for that public exposure.
+
+Create a Render PostgreSQL database, backend Web Service, and frontend Static
+Site. Both package manifests require Node 22. For the backend, use build command
+`cd backend && npm install && npm run build` and start command
+`cd backend && npm start`. The backend listens on Render's `PORT` at
+`0.0.0.0`. For the frontend, use build command
+`cd frontend && npm install && npm run build` and publish directory
+`frontend/dist`.
+
+Set these backend environment variables in Render:
+
+| Variable | Value |
+| --- | --- |
+| `NODE_ENV` | `production` |
+| `DATABASE_URL` | Render PostgreSQL internal URL when services share a region |
+| `DB_SSL_MODE` | `disable` for Render's internal URL; `require` for external URL |
+| `CORS_ORIGIN` | Exact HTTPS frontend origin, without a path or trailing slash |
+| `REPOSITORY_STORAGE_PATH` | `/var/data/repositories` |
+
+Attach a persistent disk to the backend Web Service mounted at `/var/data`,
+with enough capacity for cloned repositories. Clones are stored under
+`/var/data/repositories/<repository-uuid>`. Render files outside the mounted
+disk are ephemeral, and persistent disks require a paid Web Service. PostgreSQL
+stores indexed metadata, not Git working trees. Use a Render internal database
+URL for same-region traffic; external PostgreSQL URLs require TLS.
+
+Set the frontend build-time variable `VITE_API_BASE_URL` to
+`https://<backend-service>.onrender.com/api`. Production CORS allows only the
+configured frontend origin; local development retains permissive CORS.
+
+Initialize a fresh PostgreSQL database before serving application traffic. Run
+`cd backend && npm run db:migrate` as a Render pre-deploy command or manually
+against the production database. The command resolves migration files relative
+to the migration module, enables PostgreSQL's `vector` extension first, and
+applies pending migrations transactionally. The database user must have
+permission to create the extension.
 
 ## Core capabilities
 

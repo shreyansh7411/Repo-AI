@@ -1,6 +1,11 @@
-import path from "node:path";
 import { pool } from "../../config/database.js";
 import { cloneRepository } from "./repository-cloner.js";
+import {
+    getRepositoryClonePath,
+    sanitizeGitUrl,
+    validateGitUrl,
+    validateRepositoryName
+} from "./repository-storage.js";
 import { discoverFiles } from "./file-discovery.js";
 import { saveFiles, getSavedFiles } from "./file-repository.js";
 import { ParserService } from "../../parser/parser-service.js";
@@ -24,6 +29,10 @@ export async function indexRepository(
     relationshipCount: number;
     chunkCount: number;
 }> {
+    const repositoryName = validateRepositoryName(name);
+    const cloneUrl = validateGitUrl(url);
+    const storedUrl = sanitizeGitUrl(cloneUrl);
+
     const existingRepository = await pool.query<{ id: string }>(
         `
         SELECT id
@@ -32,7 +41,7 @@ export async function indexRepository(
         ORDER BY created_at DESC
         LIMIT 1
         `,
-        [name, url]
+        [repositoryName, storedUrl]
     );
 
     let createdRepository = false;
@@ -44,21 +53,17 @@ export async function indexRepository(
             VALUES ($1, $2)
             RETURNING id
             `,
-            [name, url]
+            [repositoryName, storedUrl]
         );
 
     createdRepository = !existingRepository.rows[0];
 
     const repositoryId = repositoryResult.rows[0].id;
 
-    const repositoryPath = path.join(
-        process.cwd(),
-        "repositories",
-        name
-    );
+    const repositoryPath = getRepositoryClonePath(repositoryId);
 
     try {
-        await cloneRepository(url, repositoryPath);
+        await cloneRepository(cloneUrl, repositoryPath);
 
         const files = await discoverFiles(repositoryPath);
         await saveFiles(repositoryId, files);
@@ -143,7 +148,7 @@ export async function indexRepository(
         }
 
         console.info(
-            `Indexed ${name}: ${files.length} files discovered, ` +
+            `Indexed ${repositoryName}: ${files.length} files discovered, ` +
             `${symbolsToSave.length} symbols extracted, ${symbolCount} symbols saved, ` +
             `${relationshipCount} relationships and ${chunkCount} code chunks saved.`
         );

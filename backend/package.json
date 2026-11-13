@@ -24,7 +24,8 @@
     "test:symbol-explorer": "tsx src/query/test-symbol-explorer.ts",
     "test:repository-list": "tsx src/ingestion/test-repository-list.ts",
     "verify:milestone7:production": "tsx src/query/verify-production-query.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "db:migrate": "tsx src/db/migrate.ts"
   },
   "keywords": [],
   "author": "",
@@ -49,5 +50,8 @@
     "@types/express": "^5.0.6",
     "@types/pg": "^8.23.1"
   },
-  "type": "module"
+  "type": "module",
+  "engines": {
+    "node": ">=22 <23"
+  }
 }

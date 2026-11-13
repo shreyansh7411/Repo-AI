@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { indexRepository, listRepositories } from "./services/repository-service.js";
+import { validateGitUrl, validateRepositoryName } from "./services/repository-storage.js";
 
 export async function listRepositoriesHandler(_req: Request, res: Response) {
     try {
@@ -16,13 +17,18 @@ export async function indexRepositoryHandler(
     try {
         const { name, url } = req.body;
 
-        if (!name || !url) {
+        let validatedName: string;
+        let validatedUrl: string;
+        try {
+            validatedName = validateRepositoryName(name);
+            validatedUrl = validateGitUrl(url);
+        } catch (error) {
             return res.status(400).json({
-                error: "Repository name and URL are required"
+                error: error instanceof Error ? error.message : "Repository name or URL is invalid"
             });
         }
 
-        const result = await indexRepository(name, url);
+        const result = await indexRepository(validatedName, validatedUrl);
 
         return res.status(201).json({
             message: "Repository indexed successfully",
@@ -32,8 +38,8 @@ export async function indexRepositoryHandler(
             relationshipCount: result.relationshipCount,
             chunkCount: result.chunkCount
         });
-    } catch (error) {
-        console.error("Repository indexing failed:", error);
+    } catch {
+        console.error("Repository indexing failed; sensitive request details were omitted.");
 
         return res.status(500).json({
             error: "Failed to index repository"
