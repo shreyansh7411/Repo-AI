@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { repositoryApi, type CallTraceResult, type RepositorySymbolDetails, type RepositorySymbolPage, type RepositorySymbolSummary, type SymbolType } from '../api/client'
+import { repositoryApi, type CallTraceResult, type RepositoryExplorerClient, type RepositorySymbolDetails, type RepositorySymbolPage, type RepositorySymbolSummary, type SymbolType } from '../api/client'
 import { Icon } from './Icons'
 
 const PAGE_SIZE = 50
@@ -15,11 +15,11 @@ const SYMBOL_TYPES: Array<{ value: SymbolType | ''; label: string }> = [
   { value: 'VARIABLE', label: 'Variable' },
 ]
 
-interface Props { repositoryId: string; repositoryName: string }
+interface Props { repositoryId: string; repositoryName: string; api?: RepositoryExplorerClient }
 type CallTraceState = { status: 'error'; message: string } | { status: 'loaded'; result: CallTraceResult }
 interface SymbolHistoryEntry { id: string; name: string }
 
-export function SymbolsWorkspace({ repositoryId, repositoryName }: Props) {
+export function SymbolsWorkspace({ repositoryId, repositoryName, api = repositoryApi }: Props) {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [type, setType] = useState<SymbolType | ''>('')
@@ -55,7 +55,7 @@ export function SymbolsWorkspace({ repositoryId, repositoryName }: Props) {
   useEffect(() => {
     const controller = new AbortController()
     const requestKey = `${repositoryId}:${page}:${type}:${debouncedSearch}`
-    repositoryApi.listSymbols(repositoryId, { page, pageSize: PAGE_SIZE, type, search: debouncedSearch }, controller.signal)
+    api.listSymbols(repositoryId, { page, pageSize: PAGE_SIZE, type, search: debouncedSearch }, controller.signal)
       .then(result => {
         setPageResult(result)
         setListError(null)
@@ -67,37 +67,37 @@ export function SymbolsWorkspace({ repositoryId, repositoryName }: Props) {
         setLoadedKey(requestKey)
       })
     return () => controller.abort()
-  }, [repositoryId, page, type, debouncedSearch, retry])
+  }, [api, repositoryId, page, type, debouncedSearch, retry])
 
   useEffect(() => {
     if (!selectedId) return
     const controller = new AbortController()
-    repositoryApi.getSymbol(repositoryId, selectedId, controller.signal)
+    api.getSymbol(repositoryId, selectedId, controller.signal)
       .then(result => { setDetails(result); setDetailsError(null) })
       .catch(error => {
         if (controller.signal.aborted) return
         setDetailsError(error instanceof Error ? error.message : 'Could not load symbol details.')
       })
     return () => controller.abort()
-  }, [repositoryId, selectedId])
+  }, [api, repositoryId, selectedId])
 
   useEffect(() => {
     if (!selectedId || !details || details.id !== selectedId) return
     if (details.type !== 'METHOD' && details.type !== 'FUNCTION') return
 
     const controller = new AbortController()
-    repositoryApi.getCallers(repositoryId, selectedId, controller.signal)
+    api.getCallers(repositoryId, selectedId, controller.signal)
       .then(result => setCallers({ status: 'loaded', result }))
       .catch(error => {
         if (!controller.signal.aborted) setCallers({ status: 'error', message: error instanceof Error ? error.message : 'Could not load callers.' })
       })
-    repositoryApi.getCallees(repositoryId, selectedId, controller.signal)
+    api.getCallees(repositoryId, selectedId, controller.signal)
       .then(result => setCallees({ status: 'loaded', result }))
       .catch(error => {
         if (!controller.signal.aborted) setCallees({ status: 'error', message: error instanceof Error ? error.message : 'Could not load callees.' })
       })
     return () => controller.abort()
-  }, [repositoryId, selectedId, details, traceRetry])
+  }, [api, repositoryId, selectedId, details, traceRetry])
 
   const loading = loadedKey !== visibleKey
   const selectedSymbol = pageResult?.symbols.find(symbol => symbol.id === selectedId) ?? null

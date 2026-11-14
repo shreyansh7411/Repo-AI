@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { authenticateUser, getUserById, registerUser } from "./auth-service.js";
+import { authenticateUser, changeUserPassword, getUserById, registerUser, updateUserName } from "./auth-service.js";
 import { AuthConfigurationError, clearedSessionCookie, createSessionToken, getSessionKey, sessionCookie } from "./session.js";
 
 function inputError(res: Response): Response {
@@ -77,5 +77,43 @@ export async function meHandler(req: Request, res: Response): Promise<Response> 
         return res.json({ user });
     } catch {
         return res.status(500).json({ error: "Authentication status could not be loaded." });
+    }
+}
+
+export async function updateProfileHandler(req: Request, res: Response): Promise<Response> {
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!name || name.length > 120) {
+        return res.status(400).json({ error: "Display name must be between 1 and 120 characters." });
+    }
+    try {
+        const user = req.auth ? await updateUserName(req.auth.userId, name) : null;
+        if (!user) return res.status(401).json({ error: "Authentication required." });
+        return res.json({ user });
+    } catch {
+        console.error("Profile update failed.");
+        return res.status(500).json({ error: "Profile could not be updated." });
+    }
+}
+
+export async function changePasswordHandler(req: Request, res: Response): Promise<Response> {
+    const { currentPassword, newPassword } = req.body ?? {};
+    if (typeof currentPassword !== "string" || currentPassword.length < 1 || currentPassword.length > 128) {
+        return res.status(400).json({ error: "Enter your current password." });
+    }
+    if (!validPassword(newPassword)) {
+        return res.status(400).json({ error: "New password must be between 12 and 128 characters." });
+    }
+
+    try {
+        if (!req.auth) return res.status(401).json({ error: "Authentication required." });
+        const result = await changeUserPassword(req.auth.userId, currentPassword, newPassword);
+        if (result.status === "invalid-current-password") {
+            return res.status(400).json({ error: "Current password is incorrect.", code: "INVALID_CURRENT_PASSWORD" });
+        }
+        const token = await createSessionToken(result.user.id, result.sessionVersion);
+        res.append("Set-Cookie", sessionCookie(token));
+        return res.json({ user: result.user });
+    } catch (error) {
+        return authFailure(res, error, "password change");
     }
 }

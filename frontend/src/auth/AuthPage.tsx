@@ -60,7 +60,7 @@ export function AuthPage({ mode }: Props) {
   return <main className="auth-page">
     <div className="auth-backdrop-glow" />
     <section className="auth-card" aria-labelledby="auth-title">
-      <Link className="auth-brand" to="/dashboard">
+      <Link className="auth-brand" to="/">
         <span className="auth-brand-mark"><Icon name="brand" size={22} /></span>
         <span><strong>repo<span>·</span>ai</strong><small>REPOSITORY INTELLIGENCE</small></span>
       </Link>

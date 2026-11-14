@@ -1,5 +1,6 @@
 export interface AuthContext {
     userId: string;
+    sessionVersion: number;
 }
 
 declare global {

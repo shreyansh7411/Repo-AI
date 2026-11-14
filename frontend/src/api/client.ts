@@ -142,8 +142,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const contentType = response.headers.get('content-type') || ''
   const payload: unknown = contentType.includes('application/json') ? await response.json() : await response.text()
   if (!response.ok) {
-    if (response.status === 401 && !path.startsWith('/auth/')) {
+    if (response.status === 401 && !path.startsWith('/auth/') && !path.startsWith('/demo/')) {
       window.dispatchEvent(new CustomEvent('repo-ai:unauthorized'))
+    }
+    if (response.status === 410 && path.startsWith('/demo/')) {
+      window.dispatchEvent(new CustomEvent('repo-ai:demo-expired', { detail: extractMessage(payload, response.status) }))
+    }
+    if (response.status === 401 && path.startsWith('/demo/repositories/')) {
+      window.dispatchEvent(new CustomEvent('repo-ai:demo-expired', { detail: 'This demo session is no longer available. Start a new demo to continue.' }))
     }
     throw new ApiError(extractMessage(payload, response.status), response.status)
   }
@@ -195,7 +201,60 @@ export const authApi = {
     request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   logout: () => request<{ message: string }>('/auth/logout', { method: 'POST' }),
   me: () => request<AuthResponse>('/auth/me'),
+  updateProfile: (name: string) => request<AuthResponse>('/auth/profile', { method: 'PATCH', body: JSON.stringify({ name }) }),
+  changePassword: (currentPassword: string, newPassword: string) => request<AuthResponse>('/auth/password', {
+    method: 'POST', body: JSON.stringify({ currentPassword, newPassword }),
+  }),
 }
+
+export interface DemoWorkspaceResponse {
+  repository: RepositorySummary
+  session: { expiresAt: string }
+}
+
+export interface DemoIndexResponse extends DemoWorkspaceResponse {
+  indexing: { fileCount: number; symbolCount: number; relationshipCount: number; chunkCount: number }
+}
+
+export interface DemoFilesResponse {
+  repositoryId: string
+  page: number
+  pageSize: number
+  totalCount: number
+  files: Array<{ id: string; path: string; language: string | null; size: number | null; startLine: number | null; endLine: number | null }>
+}
+
+export const demoApi = {
+  start: (url: string) => request<DemoIndexResponse>('/demo/session', { method: 'POST', body: JSON.stringify({ url }) }),
+  session: () => request<DemoWorkspaceResponse>('/demo/session'),
+  end: () => request<{ ended: boolean; cleanup: string }>('/demo/session', { method: 'DELETE', body: JSON.stringify({}) }),
+  files: (repositoryId: string, page = 1, pageSize = 100, signal?: AbortSignal) =>
+    request<DemoFilesResponse>(`/demo/repositories/${encodeURIComponent(repositoryId)}/files?page=${page}&pageSize=${pageSize}`, { signal }),
+  search: (repositoryId: string, query: string, mode: SearchMode) =>
+    request<RepositorySearchResult>(`/demo/repositories/${encodeURIComponent(repositoryId)}/query/search`, {
+      method: 'POST', body: JSON.stringify({ query, mode, topK: 8, maxDepth: 1 }),
+    }),
+  listSymbols: (repositoryId: string, options: { page: number; pageSize: number; type: SymbolType | ''; search: string }, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ page: String(options.page), pageSize: String(options.pageSize) })
+    if (options.type) params.set('type', options.type)
+    if (options.search) params.set('search', options.search)
+    return request<RepositorySymbolPage>(`/demo/repositories/${encodeURIComponent(repositoryId)}/query/symbols?${params}`, { signal })
+  },
+  getSymbol: (repositoryId: string, symbolId: string, signal?: AbortSignal) =>
+    request<RepositorySymbolDetails>(`/demo/repositories/${encodeURIComponent(repositoryId)}/query/symbol`, {
+      method: 'POST', body: JSON.stringify({ symbolId }), signal,
+    }),
+  getCallers: (repositoryId: string, symbolId: string, signal?: AbortSignal) =>
+    request<CallTraceResult>(`/demo/repositories/${encodeURIComponent(repositoryId)}/trace/callers`, {
+      method: 'POST', body: JSON.stringify({ symbolId, maxDepth: 1 }), signal,
+    }),
+  getCallees: (repositoryId: string, symbolId: string, signal?: AbortSignal) =>
+    request<CallTraceResult>(`/demo/repositories/${encodeURIComponent(repositoryId)}/trace/callees`, {
+      method: 'POST', body: JSON.stringify({ symbolId, maxDepth: 1 }), signal,
+    }),
+}
+
+export type RepositoryExplorerClient = Pick<typeof repositoryApi, 'listSymbols' | 'getSymbol' | 'getCallers' | 'getCallees'>
 
 export function repositoryNameFromUrl(value: string): string {
   const scpPath = value.match(/^[^@\s]+@[^:\s]+:(.+)$/)?.[1]

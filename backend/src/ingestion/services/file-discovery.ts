@@ -1,4 +1,4 @@
-import fs from "fs/promises";
+import { opendir, stat } from "node:fs/promises";
 import path from "path";
 
 const SUPPORTED_EXTENSIONS = new Set([
@@ -24,6 +24,15 @@ export interface DiscoveredFile {
     size: number;
 }
 
+export interface DiscoveryLimits {
+    maxFiles: number;
+    maxFileBytes: number;
+    maxSourceBytes: number;
+    maxFilesystemEntries: number;
+    deadlineAt: number;
+    ignoreSymlinks?: boolean;
+}
+
 function getLanguage(extension: string): string {
     switch (extension) {
         case ".java":
@@ -42,16 +51,30 @@ function getLanguage(extension: string): string {
 }
 
 export async function discoverFiles(
-    repositoryPath: string
+    repositoryPath: string,
+    limits?: DiscoveryLimits
 ): Promise<DiscoveredFile[]> {
     const files: DiscoveredFile[] = [];
+    let totalSourceBytes = 0;
+    let visitedEntries = 0;
+
+    function checkLimits(): void {
+        if (!limits) return;
+        if (Date.now() > limits.deadlineAt) throw new Error("Demo indexing exceeded the configured time limit.");
+        if (visitedEntries > limits.maxFilesystemEntries) {
+            throw new Error("Repository exceeds the configured demo filesystem-entry limit.");
+        }
+    }
 
     async function walk(currentPath: string): Promise<void> {
-        const entries = await fs.readdir(currentPath, {
-            withFileTypes: true
-        });
+        checkLimits();
+        const directory = await opendir(currentPath);
 
-        for (const entry of entries) {
+        for await (const entry of directory) {
+            visitedEntries += 1;
+            checkLimits();
+            // Demo repositories are untrusted; never follow links outside the clone root.
+            if (limits?.ignoreSymlinks && entry.isSymbolicLink()) continue;
             if (
                 entry.isDirectory() &&
                 IGNORED_DIRECTORIES.has(entry.name)
@@ -72,7 +95,16 @@ export async function discoverFiles(
                 continue;
             }
 
-            const stats = await fs.stat(fullPath);
+            checkLimits();
+            const stats = await stat(fullPath);
+            checkLimits();
+            if (limits && stats.size > limits.maxFileBytes) {
+                throw new Error("Repository contains a source file larger than the demo limit.");
+            }
+            if (limits && (files.length >= limits.maxFiles || totalSourceBytes + stats.size > limits.maxSourceBytes)) {
+                throw new Error("Repository exceeds the configured demo file or source-size limit.");
+            }
+            totalSourceBytes += stats.size;
 
             files.push({
                 path: fullPath,

@@ -21,6 +21,20 @@ export function getRepositoryClonePath(repositoryId: string): string {
     return clonePath;
 }
 
+export function getDemoRepositoryClonePath(repositoryId: string): string {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(repositoryId)) {
+        throw new Error("Invalid repository identifier");
+    }
+    const root = getRepositoryStoragePath();
+    const demoRoot = path.resolve(root, "demo");
+    const clonePath = path.resolve(demoRoot, repositoryId);
+    const relative = path.relative(demoRoot, clonePath);
+    if (!relative || relative.startsWith(`..${path.sep}`) || relative === ".." || path.isAbsolute(relative)) {
+        throw new Error("Demo clone path is outside the configured storage directory");
+    }
+    return clonePath;
+}
+
 export function validateRepositoryName(value: unknown): string {
     if (typeof value !== "string") throw new Error("Repository name is invalid");
     const name = value.trim();

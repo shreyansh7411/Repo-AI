@@ -54,3 +54,56 @@ export async function getUserById(userId: string): Promise<AuthUser | null> {
     );
     return result.rows[0] ? toAuthUser(result.rows[0]) : null;
 }
+
+export async function updateUserName(userId: string, name: string): Promise<AuthUser | null> {
+    const result = await pool.query<UserRow>(
+        `UPDATE users SET name = $2 WHERE id = $1
+         RETURNING id, name, email, created_at AS "createdAt"`,
+        [userId, name]
+    );
+    return result.rows[0] ? toAuthUser(result.rows[0]) : null;
+}
+
+export async function changeUserPassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string
+): Promise<{ status: "updated"; user: AuthUser; sessionVersion: number } | { status: "invalid-current-password" }> {
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+        const selected = await client.query<UserRow & { passwordHash: string; sessionVersion: number }>(
+            `SELECT id, name, email, created_at AS "createdAt", password_hash AS "passwordHash",
+                    session_version AS "sessionVersion"
+             FROM users WHERE id = $1 FOR UPDATE`,
+            [userId]
+        );
+        const row = selected.rows[0];
+        if (!row || !(await argon2.verify(row.passwordHash, currentPassword))) {
+            await client.query("ROLLBACK");
+            return { status: "invalid-current-password" };
+        }
+
+        const passwordHash = await argon2.hash(newPassword, {
+            type: argon2.argon2id,
+            memoryCost: 19_456,
+            timeCost: 2,
+            parallelism: 1
+        });
+        const updated = await client.query<UserRow & { sessionVersion: number }>(
+            `UPDATE users
+             SET password_hash = $2, session_version = session_version + 1
+             WHERE id = $1
+             RETURNING id, name, email, created_at AS "createdAt", session_version AS "sessionVersion"`,
+            [userId, passwordHash]
+        );
+        await client.query("COMMIT");
+        const updatedRow = updated.rows[0];
+        return { status: "updated", user: toAuthUser(updatedRow), sessionVersion: updatedRow.sessionVersion };
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+}

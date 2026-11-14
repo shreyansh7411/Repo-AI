@@ -18,8 +18,8 @@ export function getSessionKey(): Uint8Array {
     return new TextEncoder().encode(secret);
 }
 
-export async function createSessionToken(userId: string): Promise<string> {
-    return new SignJWT({})
+export async function createSessionToken(userId: string, sessionVersion = 0): Promise<string> {
+    return new SignJWT({ sv: sessionVersion })
         .setProtectedHeader({ alg: "HS256", typ: "JWT" })
         .setSubject(userId)
         .setIssuer("repo-ai")
@@ -29,14 +29,17 @@ export async function createSessionToken(userId: string): Promise<string> {
         .sign(getSessionKey());
 }
 
-export async function getSessionUserId(token: string): Promise<string | null> {
+export async function getSessionClaims(token: string): Promise<{ userId: string; sessionVersion: number } | null> {
     try {
         const { payload } = await jwtVerify(token, getSessionKey(), {
             algorithms: ["HS256"],
             issuer: "repo-ai",
             audience: "repo-ai-session"
         });
-        return typeof payload.sub === "string" ? payload.sub : null;
+        if (typeof payload.sub !== "string") return null;
+        const sessionVersion = payload.sv === undefined ? 0 : payload.sv;
+        if (typeof sessionVersion !== "number" || !Number.isInteger(sessionVersion) || sessionVersion < 0) return null;
+        return { userId: payload.sub, sessionVersion };
     } catch {
         return null;
     }

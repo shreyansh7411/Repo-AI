@@ -11,9 +11,10 @@ interface Props {
   searching: boolean
   error: string | null
   onSearch: (query: string, mode: SearchMode) => void
+  availableModes?: SearchMode[]
 }
 
-export function SearchWorkspace({ repositoryName, repositoryUrl, fileCount, symbolCount, searchResult, searching, error, onSearch }: Props) {
+export function SearchWorkspace({ repositoryName, repositoryUrl, fileCount, symbolCount, searchResult, searching, error, onSearch, availableModes = ['structural', 'hybrid'] }: Props) {
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<SearchMode>('structural')
 
@@ -38,7 +39,6 @@ export function SearchWorkspace({ repositoryName, repositoryUrl, fileCount, symb
         <div className="stat-divider" />
         <div className="stat-item"><span className="stat-value">{symbolCount.toLocaleString()}</span><span className="stat-label">Symbols mapped</span></div>
         <div className="stat-divider" />
-        <div className="stat-item"><span className="status-dot ready" /><span className="stat-label">Repository ready</span></div>
       </div>
     </section>
 
@@ -48,8 +48,8 @@ export function SearchWorkspace({ repositoryName, repositoryUrl, fileCount, symb
         <div className="search-input-wrap"><Icon name="search" size={19} /><input aria-label="Search source code" value={query} onChange={event => setQuery(event.target.value)} placeholder="Ask about a flow, symbol, or behavior…" /></div>
         <div className="search-controls">
           <div className="mode-switch" role="group" aria-label="Retrieval mode">
-            <button className={mode === 'structural' ? 'active' : ''} type="button" onClick={() => setMode('structural')} aria-pressed={mode === 'structural'}>Structural</button>
-            <button className={mode === 'hybrid' ? 'active' : ''} type="button" onClick={() => setMode('hybrid')} aria-pressed={mode === 'hybrid'}>Hybrid</button>
+            <button className={mode === 'structural' ? 'active' : ''} type="button" onClick={() => setMode('structural')} aria-pressed={mode === 'structural'} disabled={!availableModes.includes('structural')}>Structural</button>
+            <button className={mode === 'hybrid' ? 'active' : ''} type="button" onClick={() => setMode('hybrid')} aria-pressed={mode === 'hybrid'} disabled={!availableModes.includes('hybrid')}>Hybrid</button>
           </div>
           <button className="button-primary search-submit" type="submit" disabled={!query.trim() || searching}>
             {searching ? <><Icon name="spinner" size={16} />Searching…</> : <><Icon name="search" size={16} />Search code</>}

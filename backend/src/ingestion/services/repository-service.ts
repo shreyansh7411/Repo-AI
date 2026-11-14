@@ -1,8 +1,10 @@
-import { rm } from "node:fs/promises";
+import { opendir, rm, stat } from "node:fs/promises";
+import path from "node:path";
 import { pool } from "../../config/database.js";
 import { cloneRepository } from "./repository-cloner.js";
 import {
     getRepositoryClonePath,
+    getDemoRepositoryClonePath,
     sanitizeGitUrl,
     validateGitUrl,
     validateRepositoryName
@@ -20,69 +22,141 @@ import { replaceRelationships } from "./relationship-repository.js";
 import { buildCodeChunks } from "../../chunking/code-chunk-builder.js";
 import { replaceCodeChunks } from "./code-chunk-repository.js";
 
-export async function indexRepository(
-    name: string,
-    url: string,
-    ownerUserId: string
-): Promise<{
+export interface RepositoryIndexResult {
     repositoryId: string;
     fileCount: number;
     symbolCount: number;
     relationshipCount: number;
     chunkCount: number;
-}> {
+}
+
+export interface DemoIndexLimits {
+    maxFiles: number;
+    maxFilesystemEntries: number;
+    maxFileBytes: number;
+    maxRepositoryBytes: number;
+    maxDurationMs: number;
+}
+
+type RepositoryIndexScope = { ownerUserId: string; demoSessionId?: never } | { ownerUserId?: never; demoSessionId: string };
+
+export function indexRepository(name: string, url: string, ownerUserId: string): Promise<RepositoryIndexResult> {
+    return indexRepositoryWithScope(name, url, { ownerUserId });
+}
+
+export function indexDemoRepository(name: string, url: string, demoSessionId: string, limits: DemoIndexLimits): Promise<RepositoryIndexResult> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(demoSessionId)) {
+        throw new Error("A valid demo session is required to index a repository");
+    }
+    return indexRepositoryWithScope(name, url, { demoSessionId }, limits);
+}
+
+async function indexRepositoryWithScope(
+    name: string,
+    url: string,
+    scope: RepositoryIndexScope,
+    demoLimits?: DemoIndexLimits
+): Promise<RepositoryIndexResult> {
     const repositoryName = validateRepositoryName(name);
     const cloneUrl = validateGitUrl(url);
     const storedUrl = sanitizeGitUrl(cloneUrl);
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ownerUserId)) {
-        throw new Error("Authenticated user is required to index a repository");
-    }
+    const ownerUserId = scope.ownerUserId;
+    const demoSessionId = scope.demoSessionId;
+    const scopeId = ownerUserId ?? demoSessionId;
+    if (!scopeId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(scopeId)) throw new Error("A valid repository indexing scope is required");
 
-    const existingRepository = await pool.query<{ id: string }>(
-        `
-        SELECT id
-        FROM repositories
-        WHERE name = $1 AND url = $2 AND owner_user_id = $3
-        ORDER BY created_at DESC
-        LIMIT 1
-        `,
-        [repositoryName, storedUrl, ownerUserId]
-    );
+    const existingRepository = ownerUserId
+        ? await pool.query<{ id: string }>(
+            `SELECT id FROM repositories WHERE name = $1 AND url = $2 AND owner_user_id = $3 ORDER BY created_at DESC LIMIT 1`,
+            [repositoryName, storedUrl, ownerUserId]
+        )
+        : await pool.query<{ id: string }>(
+            `SELECT id FROM repositories WHERE name = $1 AND url = $2 AND demo_session_id = $3 ORDER BY created_at DESC LIMIT 1`,
+            [repositoryName, storedUrl, demoSessionId]
+        );
 
     let createdRepository = false;
     const repositoryResult = existingRepository.rows[0]
         ? existingRepository
-        : await pool.query<{ id: string }>(
-            `
-            INSERT INTO repositories (name, url, owner_user_id)
-            VALUES ($1, $2, $3)
-            RETURNING id
-            `,
-            [repositoryName, storedUrl, ownerUserId]
-        );
+        : ownerUserId
+            ? await pool.query<{ id: string }>(
+                `INSERT INTO repositories (name, url, owner_user_id) VALUES ($1, $2, $3) RETURNING id`,
+                [repositoryName, storedUrl, ownerUserId]
+            )
+            : await pool.query<{ id: string }>(
+                `INSERT INTO repositories (name, url, owner_user_id, demo_session_id) VALUES ($1, $2, NULL, $3) RETURNING id`,
+                [repositoryName, storedUrl, demoSessionId]
+            );
 
     createdRepository = !existingRepository.rows[0];
 
     const repositoryId = repositoryResult.rows[0].id;
 
-    const repositoryPath = getRepositoryClonePath(repositoryId);
+    const repositoryPath = demoSessionId ? getDemoRepositoryClonePath(repositoryId) : getRepositoryClonePath(repositoryId);
+    const deadline = demoLimits ? Date.now() + demoLimits.maxDurationMs : Number.POSITIVE_INFINITY;
+    const checkDeadline = () => {
+        if (Date.now() > deadline) throw new Error("Demo indexing exceeded the configured time limit.");
+    };
 
     try {
-        await cloneRepository(cloneUrl, repositoryPath);
+        await cloneRepository(cloneUrl, repositoryPath, demoLimits ? {
+            timeoutMs: Math.max(1, deadline - Date.now()),
+            shallow: true,
+            maxBytes: demoLimits.maxRepositoryBytes,
+            maxEntries: demoLimits.maxFilesystemEntries
+        } : {});
+        checkDeadline();
 
-        const files = await discoverFiles(repositoryPath);
+        if (demoLimits) {
+            const pending = [repositoryPath];
+            let cloneBytes = 0;
+            let cloneEntries = 0;
+            while (pending.length > 0) {
+                checkDeadline();
+                const current = pending.pop()!;
+                const directory = await opendir(current);
+                for await (const entry of directory) {
+                    checkDeadline();
+                    cloneEntries += 1;
+                    if (cloneEntries > demoLimits.maxFilesystemEntries) {
+                        throw new Error("Repository exceeds the configured demo filesystem-entry limit.");
+                    }
+                    const entryPath = path.join(current, entry.name);
+                    if (entry.isDirectory()) pending.push(entryPath);
+                    else if (entry.isFile()) {
+                        cloneBytes += (await stat(entryPath)).size;
+                        checkDeadline();
+                        if (cloneBytes > demoLimits.maxRepositoryBytes) throw new Error("Repository exceeds the configured demo size limit.");
+                    }
+                }
+            }
+        }
+
+        const files = await discoverFiles(repositoryPath, demoLimits ? {
+            maxFiles: demoLimits.maxFiles,
+            maxFileBytes: demoLimits.maxFileBytes,
+            maxSourceBytes: demoLimits.maxRepositoryBytes,
+            maxFilesystemEntries: demoLimits.maxFilesystemEntries,
+            deadlineAt: deadline,
+            ignoreSymlinks: true
+        } : undefined);
+        checkDeadline();
         await saveFiles(repositoryId, files);
+        checkDeadline();
 
         const savedFiles = await getSavedFiles(repositoryId);
+        checkDeadline();
         const fileIdByPath = new Map(
             savedFiles.map(file => [file.path, file.id])
         );
 
         const parser = await ParserService.initialize();
+        checkDeadline();
         const symbolsToSave: SymbolRecord[] = [];
         const parsedFiles: ParsedRepositoryFile[] = [];
 
         for (const file of files) {
+            checkDeadline();
             const fileId = fileIdByPath.get(file.relativePath);
 
             if (!fileId) {
@@ -92,6 +166,7 @@ export async function indexRepository(
             }
 
             const parsed = await parser.parseFile(file.path);
+            checkDeadline();
             const extracted = extractSymbols(parsed, file.relativePath);
 
             parsedFiles.push({
@@ -114,6 +189,7 @@ export async function indexRepository(
         let chunkCount: number;
 
         try {
+            checkDeadline();
             await graphClient.query("BEGIN");
 
             symbolCount = await saveSymbols(
@@ -121,29 +197,33 @@ export async function indexRepository(
                 symbolsToSave,
                 graphClient
             );
+            checkDeadline();
             const savedSymbols = await getSymbols(repositoryId, graphClient);
+            checkDeadline();
             const relationships = buildCallRelationships(
                 repositoryId,
                 parsedFiles,
                 savedSymbols
             );
+            checkDeadline();
             relationshipCount = await replaceRelationships(
                 repositoryId,
                 relationships,
                 graphClient
             );
+            checkDeadline();
             const chunks = buildCodeChunks(repositoryId, parsedFiles, savedSymbols);
+            checkDeadline();
             chunkCount = await replaceCodeChunks(repositoryId, chunks, graphClient);
+            checkDeadline();
 
-            await graphClient.query(
-                `
-                UPDATE repositories
-                SET indexed_at = CURRENT_TIMESTAMP
-                WHERE id = $1 AND owner_user_id = $2
-                `,
-                [repositoryId, ownerUserId]
-            );
+            if (ownerUserId) {
+                await graphClient.query(`UPDATE repositories SET indexed_at = CURRENT_TIMESTAMP WHERE id = $1 AND owner_user_id = $2`, [repositoryId, ownerUserId]);
+            } else {
+                await graphClient.query(`UPDATE repositories SET indexed_at = CURRENT_TIMESTAMP WHERE id = $1 AND demo_session_id = $2 AND owner_user_id IS NULL`, [repositoryId, demoSessionId]);
+            }
 
+            checkDeadline();
             await graphClient.query("COMMIT");
         } catch (error) {
             await graphClient.query("ROLLBACK");
@@ -166,11 +246,19 @@ export async function indexRepository(
             chunkCount
         };
     } catch (error) {
-        if (createdRepository) {
-            await pool.query(
-                "DELETE FROM repositories WHERE id = $1 AND owner_user_id = $2",
-                [repositoryId, ownerUserId]
-            );
+        if (demoSessionId) {
+            let cloneRemoved = false;
+            try {
+                await rm(repositoryPath, { recursive: true, force: true });
+                cloneRemoved = true;
+            } catch (cleanupError) {
+                console.error("Demo clone cleanup failed; the cleanup worker will retry.", cleanupError);
+            }
+            if (cloneRemoved && createdRepository) {
+                await pool.query("DELETE FROM repositories WHERE id = $1 AND demo_session_id = $2 AND owner_user_id IS NULL", [repositoryId, demoSessionId]);
+            }
+        } else if (createdRepository && ownerUserId) {
+            await pool.query("DELETE FROM repositories WHERE id = $1 AND owner_user_id = $2", [repositoryId, ownerUserId]);
         }
 
         throw error;

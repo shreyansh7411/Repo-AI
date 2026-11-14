@@ -5,13 +5,19 @@ import { AddRepositoryDialog } from './components/AddRepositoryDialog'
 import { RepositorySidebar } from './components/RepositorySidebar'
 import { SearchWorkspace } from './components/SearchWorkspace'
 import { SymbolsWorkspace } from './components/SymbolsWorkspace'
+import { SettingsWorkspace } from './components/SettingsWorkspace'
 import { Icon } from './components/Icons'
 import { useAuth } from './auth/useAuth'
 import './App.css'
 
 const SELECTED_REPOSITORY_KEY = 'repo-ai:selected-repository'
 
-export type WorkspaceView = 'dashboard' | 'explorer' | 'symbols' | 'callers' | 'impact' | 'paths' | 'assistant'
+export type WorkspaceView = 'dashboard' | 'explorer' | 'symbols' | 'callers' | 'impact' | 'paths' | 'assistant' | 'settings'
+type FeatureView = Exclude<WorkspaceView, 'dashboard' | 'explorer' | 'symbols' | 'callers' | 'settings'>
+
+function isFeatureView(view: WorkspaceView): view is FeatureView {
+  return view === 'impact' || view === 'paths' || view === 'assistant'
+}
 
 function App({ view }: { view: WorkspaceView }) {
   const { user, logout } = useAuth()
@@ -112,15 +118,12 @@ function App({ view }: { view: WorkspaceView }) {
     }
   }
 
-  const connectionState = listLoading ? 'checking' : listError ? 'error' : 'connected'
-
   return <div className="app-shell">
     <RepositorySidebar
       repositories={repositories}
       selectedId={selectedId}
       loading={listLoading}
       error={listError}
-      connectionState={connectionState}
       activeView={view}
       onSelect={id => { setSelectedId(id); setSearchResult(null); setSearchError(null); setNotice(null) }}
       onRefresh={() => void loadRepositories()}
@@ -130,7 +133,7 @@ function App({ view }: { view: WorkspaceView }) {
     />
     <div className="main-shell">
       {notice && <div className="success-toast" role="status"><span className="success-check">✓</span>{notice}<button type="button" onClick={() => setNotice(null)} aria-label="Dismiss message"><Icon name="close" size={15} /></button></div>}
-      {activeRepository && view === 'explorer' ? <SearchWorkspace
+      {view === 'settings' ? <SettingsWorkspace /> : activeRepository && view === 'explorer' ? <SearchWorkspace
         key={activeRepository.repositoryId}
         repositoryName={activeRepository.name}
         repositoryUrl={activeRepository.url}
@@ -144,8 +147,8 @@ function App({ view }: { view: WorkspaceView }) {
         key={`symbols-${activeRepository.repositoryId}`}
         repositoryId={activeRepository.repositoryId}
         repositoryName={activeRepository.name}
-      /> : activeRepository && view === 'dashboard' ? <RepositoryDashboard repository={activeRepository} /> : activeRepository ? <FeaturePlaceholder view={view} /> : <main className="main-content welcome-state">
-        <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>Overview</strong></div><div className={`backend-status ${connectionState}`}><span className="status-dot" />{connectionState === 'connected' ? 'Backend connected' : connectionState === 'checking' ? 'Connecting…' : 'Backend unavailable'}</div></header>
+      /> : activeRepository && view === 'dashboard' ? <RepositoryDashboard repository={activeRepository} /> : activeRepository && isFeatureView(view) ? <FeaturePlaceholder view={view} /> : <main className="main-content welcome-state">
+        <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>Overview</strong></div></header>
         <section className="welcome-card"><div className="welcome-icon"><Icon name="brand" size={28} /></div><p className="eyebrow">REPOSITORY UNDERSTANDING AI</p><h1>Make your codebase<br /><span>make sense.</span></h1><p className="welcome-copy">Index a Git repository to explore its source code with grounded, traceable evidence.</p>
           {listLoading ? <div className="loading-card"><Icon name="spinner" />Loading your workspace…</div> : listError ? <div className="inline-error" role="alert">{listError}<button type="button" className="text-action" onClick={() => void loadRepositories()}>Retry</button></div> : <button className="button-primary" type="button" onClick={() => { setIndexError(null); setDialogOpen(true) }}><Icon name="plus" />Add your first repository <Icon name="arrow" size={16} /></button>}
         </section>
@@ -157,7 +160,7 @@ function App({ view }: { view: WorkspaceView }) {
 
 function RepositoryDashboard({ repository }: { repository: RepositorySummary }) {
   return <main className="main-content">
-    <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>Dashboard</strong></div><span className="backend-status connected"><span className="status-dot" />{repository.indexingStatus === 'INDEXED' ? 'Indexed' : 'Repository selected'}</span></header>
+    <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>Dashboard</strong></div></header>
     <section className="welcome-card">
       <div className="welcome-icon"><Icon name="folder" size={26} /></div>
       <p className="eyebrow">SELECTED REPOSITORY</p>
@@ -169,14 +172,13 @@ function RepositoryDashboard({ repository }: { repository: RepositorySummary }) 
   </main>
 }
 
-function FeaturePlaceholder({ view }: { view: WorkspaceView }) {
+function FeaturePlaceholder({ view }: { view: FeatureView }) {
   const content: Record<'impact' | 'paths' | 'assistant', { title: string; description: string }> = {
     impact: { title: 'Impact analysis', description: 'This view is reserved for repository impact analysis.' },
     paths: { title: 'Dependency paths', description: 'This view is reserved for exploring paths between repository symbols.' },
     assistant: { title: 'Assistant', description: 'The repository assistant workspace will be available here in a future update.' },
   }
-  if (!(view in content)) return null
-  const feature = content[view as keyof typeof content]
+  const feature = content[view]
   return <main className="main-content">
     <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>{feature.title}</strong></div></header>
     <section className="welcome-card"><p className="eyebrow">COMING LATER</p><h1>{feature.title}</h1><p className="welcome-copy">{feature.description}</p></section>

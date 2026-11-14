@@ -1,6 +1,8 @@
 import path from "node:path";
+import { getDemoConfig } from "./demo-config.js";
 
 export function validateProductionEnvironment(): void {
+    const demoConfig = getDemoConfig();
     const defaultSameSite = process.env.NODE_ENV === "production" ? "none" : "lax";
     const sameSite = (process.env.AUTH_COOKIE_SAME_SITE || defaultSameSite).toLowerCase();
     if (!["lax", "strict", "none"].includes(sameSite)) {
@@ -14,6 +16,10 @@ export function validateProductionEnvironment(): void {
 
     if (!process.env.AUTH_JWT_SECRET || Buffer.byteLength(process.env.AUTH_JWT_SECRET, "utf8") < 32) {
         throw new Error("AUTH_JWT_SECRET must contain at least 32 bytes in production");
+    }
+
+    if (demoConfig.enabled && !process.env.DEMO_RATE_LIMIT_SECRET) {
+        throw new Error("DEMO_RATE_LIMIT_SECRET is required when demo mode is enabled");
     }
 
     const origin = process.env.CORS_ORIGIN;

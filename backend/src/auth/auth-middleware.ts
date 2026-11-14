@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
-import { SESSION_COOKIE, getSessionUserId } from "./session.js";
+import { pool } from "../config/database.js";
+import { SESSION_COOKIE, getSessionClaims } from "./session.js";
 
 function sessionTokenFromRequest(req: Request): string | null {
     const cookieHeader = req.headers.cookie;
@@ -14,11 +15,23 @@ function sessionTokenFromRequest(req: Request): string | null {
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
     const token = sessionTokenFromRequest(req);
-    const userId = token ? await getSessionUserId(token) : null;
-    if (!userId) {
+    const claims = token ? await getSessionClaims(token) : null;
+    if (!claims) {
         res.status(401).json({ error: "Authentication required." });
         return;
     }
-    req.auth = { userId };
-    next();
+    try {
+        const result = await pool.query<{ sessionVersion: number }>(
+            "SELECT session_version AS \"sessionVersion\" FROM users WHERE id = $1",
+            [claims.userId]
+        );
+        if (!result.rows[0] || result.rows[0].sessionVersion !== claims.sessionVersion) {
+            res.status(401).json({ error: "Authentication required." });
+            return;
+        }
+        req.auth = claims;
+        next();
+    } catch {
+        res.status(500).json({ error: "Authentication could not be verified." });
+    }
 }

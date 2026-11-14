@@ -2,14 +2,13 @@ import type { AuthUser, RepositorySummary } from '../api/client'
 import { NavLink } from 'react-router-dom'
 import { Icon } from './Icons'
 
-type WorkspaceView = 'dashboard' | 'explorer' | 'symbols' | 'callers' | 'impact' | 'paths' | 'assistant'
+type WorkspaceView = 'dashboard' | 'explorer' | 'symbols' | 'callers' | 'impact' | 'paths' | 'assistant' | 'settings'
 
 interface Props {
   repositories: RepositorySummary[]
   selectedId: string | null
   loading: boolean
   error: string | null
-  connectionState: 'checking' | 'connected' | 'error'
   activeView: WorkspaceView
   onSelect: (repositoryId: string) => void
   onRefresh: () => void
@@ -18,7 +17,7 @@ interface Props {
   onLogout: () => void
 }
 
-export function RepositorySidebar({ repositories, selectedId, loading, error, connectionState, activeView, onSelect, onRefresh, onAdd, user, onLogout }: Props) {
+export function RepositorySidebar({ repositories, selectedId, loading, error, activeView, onSelect, onRefresh, onAdd, user, onLogout }: Props) {
   return <aside className="sidebar">
     <div className="brand-lockup">
       <div className="brand-mark"><Icon name="brand" size={22} /></div>
@@ -67,9 +66,8 @@ export function RepositorySidebar({ repositories, selectedId, loading, error, co
     </div>
 
     <div className="sidebar-footer">
+      <NavLink to="/settings" className={`account-settings-link${activeView === 'settings' ? ' active' : ''}`} aria-current={activeView === 'settings' ? 'page' : undefined}><Icon name="user" size={16} />Account settings</NavLink>
       <div className="signed-in-user"><span className="user-avatar">{user.name.slice(0, 1).toUpperCase()}</span><span className="signed-in-copy"><strong>{user.name}</strong><small>{user.email}</small></span><button className="sign-out-button" type="button" onClick={onLogout}>Sign out</button></div>
-      <span className="connection-indicator"><span className={`status-dot ${connectionState === 'connected' ? 'ready' : connectionState === 'error' ? 'offline' : 'pending'}`} />{connectionState === 'connected' ? 'API connected' : connectionState === 'error' ? 'API unavailable' : 'Connecting to API'}</span>
-      <span className="version-label">MILESTONE 9A</span>
     </div>
   </aside>
 }

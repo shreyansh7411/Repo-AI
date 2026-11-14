@@ -3,9 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0d1217" />
-    <meta name="description" content="Explore source code with grounded repository intelligence." />
-    <title>repo·ai — Repository Intelligence</title>
+    <meta name="theme-color" content="#101426" />
+    <meta name="description" content="Understand unfamiliar codebases with grounded repository search, symbol exploration, and deterministic dependency analysis." />
+    <title>Repo-AI — Understand your codebase</title>
+    <script>
+      try {
+        const savedTheme = localStorage.getItem('repo-ai:theme');
+        const preferredTheme = savedTheme === 'light' || savedTheme === 'dark'
+          ? savedTheme
+          : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.dataset.theme = preferredTheme;
+      } catch { document.documentElement.dataset.theme = 'dark'; }
+    </script>
   </head>
   <body>
     <div id="root"></div>

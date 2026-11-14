@@ -3,6 +3,8 @@ import cors from "cors";
 import dotenv from "dotenv";
 import repositoryRoutes from "./ingestion/repository-routes.js";
 import authRoutes from "./auth/auth-routes.js";
+import demoRoutes from "./demo/demo-routes.js";
+import { reconcileDemoSessions, startDemoCleanupWorker } from "./demo/demo-cleanup-service.js";
 import { validateProductionEnvironment } from "./config/environment.js";
 
 dotenv.config();
@@ -39,7 +41,17 @@ app.get("/api/health", (_req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/repositories", repositoryRoutes);
+app.use("/api/demo", demoRoutes);
 
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Backend listening on port ${PORT}`);
+async function startServer(): Promise<void> {
+    await reconcileDemoSessions();
+    app.listen(PORT, "0.0.0.0", () => {
+        console.log(`Backend listening on port ${PORT}`);
+        startDemoCleanupWorker();
+    });
+}
+
+void startServer().catch(error => {
+    console.error("Demo session reconciliation failed; backend will not start.", error);
+    process.exitCode = 1;
 });
