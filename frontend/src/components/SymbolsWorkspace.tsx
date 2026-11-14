@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { repositoryApi, type CallTraceResult, type RepositoryExplorerClient, type RepositorySymbolDetails, type RepositorySymbolPage, type RepositorySymbolSummary, type SymbolType } from '../api/client'
 import { Icon } from './Icons'
+import { WorkspaceHeaderActions } from './WorkspaceHeaderActions'
 
 const PAGE_SIZE = 50
 const SYMBOL_TYPES: Array<{ value: SymbolType | ''; label: string }> = [
@@ -15,11 +16,11 @@ const SYMBOL_TYPES: Array<{ value: SymbolType | ''; label: string }> = [
   { value: 'VARIABLE', label: 'Variable' },
 ]
 
-interface Props { repositoryId: string; repositoryName: string; api?: RepositoryExplorerClient }
+interface Props { repositoryId: string; repositoryName: string; api?: RepositoryExplorerClient; showHeaderActions?: boolean }
 type CallTraceState = { status: 'error'; message: string } | { status: 'loaded'; result: CallTraceResult }
 interface SymbolHistoryEntry { id: string; name: string }
 
-export function SymbolsWorkspace({ repositoryId, repositoryName, api = repositoryApi }: Props) {
+export function SymbolsWorkspace({ repositoryId, repositoryName, api = repositoryApi, showHeaderActions = false }: Props) {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [type, setType] = useState<SymbolType | ''>('')
@@ -157,7 +158,7 @@ export function SymbolsWorkspace({ repositoryId, repositoryName, api = repositor
   }
 
   return <main className="main-content symbols-workspace">
-    <header className="workspace-header"><div className="breadcrumb"><span>Repositories</span><span className="breadcrumb-slash">/</span><span>{repositoryName}</span><span className="breadcrumb-slash">/</span><strong>Symbols</strong></div><span className="symbols-header-label"><Icon name="code" size={15} />SYMBOL EXPLORER</span></header>
+    <header className="workspace-header"><div className="breadcrumb"><span>Repositories</span><span className="breadcrumb-slash">/</span><span>{repositoryName}</span><span className="breadcrumb-slash">/</span><strong>Symbols</strong></div><div className="workspace-header-right"><span className="symbols-header-label"><Icon name="code" size={15} />SYMBOL EXPLORER</span>{showHeaderActions && <WorkspaceHeaderActions />}</div></header>
 
     <section className="symbols-heading"><div><p className="eyebrow">CODE STRUCTURE</p><h1>Symbols</h1><p>Browse declarations extracted from this repository.</p></div><div className="symbol-total"><span className="stat-value">{loading ? '—' : (pageResult?.totalCount ?? 0).toLocaleString()}</span><span className="stat-label">matching symbols</span></div></section>
 

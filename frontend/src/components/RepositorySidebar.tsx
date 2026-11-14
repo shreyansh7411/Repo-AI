@@ -66,7 +66,6 @@ export function RepositorySidebar({ repositories, selectedId, loading, error, ac
     </div>
 
     <div className="sidebar-footer">
-      <NavLink to="/settings" className={`account-settings-link${activeView === 'settings' ? ' active' : ''}`} aria-current={activeView === 'settings' ? 'page' : undefined}><Icon name="user" size={16} />Account settings</NavLink>
       <div className="signed-in-user"><span className="user-avatar">{user.name.slice(0, 1).toUpperCase()}</span><span className="signed-in-copy"><strong>{user.name}</strong><small>{user.email}</small></span><button className="sign-out-button" type="button" onClick={onLogout}>Sign out</button></div>
     </div>
   </aside>

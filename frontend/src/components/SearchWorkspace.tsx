@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import type { RepositorySearchResult, SearchEvidence, SearchMode } from '../api/client'
 import { Icon } from './Icons'
+import { WorkspaceHeaderActions } from './WorkspaceHeaderActions'
 
 interface Props {
   repositoryName: string
@@ -12,9 +13,10 @@ interface Props {
   error: string | null
   onSearch: (query: string, mode: SearchMode) => void
   availableModes?: SearchMode[]
+  showHeaderActions?: boolean
 }
 
-export function SearchWorkspace({ repositoryName, repositoryUrl, fileCount, symbolCount, searchResult, searching, error, onSearch, availableModes = ['structural', 'hybrid'] }: Props) {
+export function SearchWorkspace({ repositoryName, repositoryUrl, fileCount, symbolCount, searchResult, searching, error, onSearch, availableModes = ['structural', 'hybrid'], showHeaderActions = false }: Props) {
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<SearchMode>('structural')
 
@@ -26,7 +28,7 @@ export function SearchWorkspace({ repositoryName, repositoryUrl, fileCount, symb
   return <main className="main-content">
     <header className="workspace-header">
       <div className="breadcrumb"><span>Repositories</span><span className="breadcrumb-slash">/</span><strong>{repositoryName}</strong></div>
-      <div className="header-actions"><span className="indexed-label"><span className="status-dot ready" />Indexed</span></div>
+      <div className="workspace-header-right"><div className="header-actions"><span className="indexed-label"><span className="status-dot ready" />Indexed</span></div>{showHeaderActions && <WorkspaceHeaderActions />}</div>
     </header>
 
     <section className="repo-overview">

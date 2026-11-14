@@ -1,5 +1,7 @@
 # Repo AI
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Open%20Repo--AI-7048d7?style=for-the-badge)](https://repo-ai-frontend.onrender.com)
+
 Repo AI is a repository-intelligence application for indexing source code and
 answering questions about a repository. It combines a React/Vite frontend with
 a TypeScript/Express backend, PostgreSQL metadata storage, deterministic code

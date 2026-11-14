@@ -276,6 +276,9 @@
   .signed-in-user { flex: 1 1 100%; }
   .main-content { min-height: 70vh; padding: 0 20px 23px; }
   .workspace-header { min-height: 54px; }
+  .workspace-header { align-items: flex-start; flex-wrap: wrap; gap: 9px; padding: 9px 0; }
+  .workspace-header-right { width: 100%; justify-content: flex-end; }
+  .workspace-header-actions { flex-wrap: wrap; justify-content: flex-end; }
   .repo-overview { gap: 15px; padding: 25px 0 20px; }
   .repo-stats { gap: 13px; padding-left: 0; }
   .stat-item:last-child { white-space: normal; }

@@ -7,6 +7,7 @@ import { SearchWorkspace } from './components/SearchWorkspace'
 import { SymbolsWorkspace } from './components/SymbolsWorkspace'
 import { SettingsWorkspace } from './components/SettingsWorkspace'
 import { Icon } from './components/Icons'
+import { WorkspaceHeaderActions } from './components/WorkspaceHeaderActions'
 import { useAuth } from './auth/useAuth'
 import './App.css'
 
@@ -143,12 +144,14 @@ function App({ view }: { view: WorkspaceView }) {
         searching={searching}
         error={searchError}
         onSearch={(query, mode) => void searchRepository(query, mode)}
+        showHeaderActions
       /> : activeRepository && (view === 'symbols' || view === 'callers') ? <SymbolsWorkspace
         key={`symbols-${activeRepository.repositoryId}`}
         repositoryId={activeRepository.repositoryId}
         repositoryName={activeRepository.name}
+        showHeaderActions
       /> : activeRepository && view === 'dashboard' ? <RepositoryDashboard repository={activeRepository} /> : activeRepository && isFeatureView(view) ? <FeaturePlaceholder view={view} /> : <main className="main-content welcome-state">
-        <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>Overview</strong></div></header>
+        <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>Overview</strong></div><WorkspaceHeaderActions /></header>
         <section className="welcome-card"><div className="welcome-icon"><Icon name="brand" size={28} /></div><p className="eyebrow">REPOSITORY UNDERSTANDING AI</p><h1>Make your codebase<br /><span>make sense.</span></h1><p className="welcome-copy">Index a Git repository to explore its source code with grounded, traceable evidence.</p>
           {listLoading ? <div className="loading-card"><Icon name="spinner" />Loading your workspace…</div> : listError ? <div className="inline-error" role="alert">{listError}<button type="button" className="text-action" onClick={() => void loadRepositories()}>Retry</button></div> : <button className="button-primary" type="button" onClick={() => { setIndexError(null); setDialogOpen(true) }}><Icon name="plus" />Add your first repository <Icon name="arrow" size={16} /></button>}
         </section>
@@ -160,7 +163,7 @@ function App({ view }: { view: WorkspaceView }) {
 
 function RepositoryDashboard({ repository }: { repository: RepositorySummary }) {
   return <main className="main-content">
-    <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>Dashboard</strong></div></header>
+    <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>Dashboard</strong></div><WorkspaceHeaderActions /></header>
     <section className="welcome-card">
       <div className="welcome-icon"><Icon name="folder" size={26} /></div>
       <p className="eyebrow">SELECTED REPOSITORY</p>
@@ -180,7 +183,7 @@ function FeaturePlaceholder({ view }: { view: FeatureView }) {
   }
   const feature = content[view]
   return <main className="main-content">
-    <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>{feature.title}</strong></div></header>
+    <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>{feature.title}</strong></div><WorkspaceHeaderActions /></header>
     <section className="welcome-card"><p className="eyebrow">COMING LATER</p><h1>{feature.title}</h1><p className="welcome-copy">{feature.description}</p></section>
   </main>
 }

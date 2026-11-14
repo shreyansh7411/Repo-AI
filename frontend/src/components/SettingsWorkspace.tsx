@@ -1,11 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { useAuth } from '../auth/useAuth'
-import { useTheme } from '../theme/useTheme'
 import { Icon } from './Icons'
+import { WorkspaceHeaderActions } from './WorkspaceHeaderActions'
 
 export function SettingsWorkspace() {
   const { user, updateProfile, changePassword } = useAuth()
-  const { theme, setTheme } = useTheme()
   const [name, setName] = useState(user?.name ?? '')
   const [profileBusy, setProfileBusy] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
@@ -45,8 +44,8 @@ export function SettingsWorkspace() {
   }
 
   return <main className="main-content settings-workspace">
-    <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>Settings</strong></div></header>
-    <section className="settings-heading"><span className="section-kicker">YOUR ACCOUNT</span><h1>Account settings</h1><p>Manage your profile and personalize your workspace.</p></section>
+    <header className="workspace-header"><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>Settings</strong></div><WorkspaceHeaderActions settingsActive /></header>
+    <section className="settings-heading"><span className="section-kicker">YOUR ACCOUNT</span><h1>Account settings</h1><p>Manage your profile and password.</p></section>
     <div className="settings-grid">
       <section className="settings-card"><div className="settings-card-title"><span className="settings-icon"><Icon name="user" size={19} /></span><div><h2>Profile</h2><p>Your account identity in Repo-AI</p></div></div>
         <form className="settings-form" onSubmit={event => void saveProfile(event)}>
@@ -65,10 +64,6 @@ export function SettingsWorkspace() {
           {passwordError && <div className="settings-message error-text" role="alert">{passwordError}</div>}{passwordSuccess && <div className="settings-message success" role="status">{passwordSuccess}</div>}
           <button className="button-primary settings-submit" type="submit" disabled={passwordBusy}>{passwordBusy ? 'Updating…' : 'Update password'}<Icon name="arrow" size={15} /></button>
         </form>
-      </section>
-
-      <section className="settings-card appearance-card"><div className="settings-card-title"><span className="settings-icon"><Icon name={theme === 'dark' ? 'moon' : 'sun'} size={18} /></span><div><h2>Appearance</h2><p>Choose how Repo-AI looks on this device</p></div></div>
-        <div className="theme-choice" role="group" aria-label="Color theme"><button type="button" className={theme === 'light' ? 'selected' : ''} onClick={() => setTheme('light')} aria-pressed={theme === 'light'}><Icon name="sun" size={17} /><span><strong>Light</strong><small>Bright surfaces</small></span>{theme === 'light' && <Icon name="check" size={16} />}</button><button type="button" className={theme === 'dark' ? 'selected' : ''} onClick={() => setTheme('dark')} aria-pressed={theme === 'dark'}><Icon name="moon" size={17} /><span><strong>Dark</strong><small>Low-light workspace</small></span>{theme === 'dark' && <Icon name="check" size={16} />}</button></div>
       </section>
     </div>
     <footer className="workspace-footer"><span>Passwords are hashed by the backend. Session cookies remain inaccessible to browser JavaScript.</span></footer>
