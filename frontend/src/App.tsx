@@ -5,6 +5,7 @@ import { AddRepositoryDialog } from './components/AddRepositoryDialog'
 import { RepositorySidebar } from './components/RepositorySidebar'
 import { SearchWorkspace } from './components/SearchWorkspace'
 import { SymbolsWorkspace } from './components/SymbolsWorkspace'
+import { PathWorkspace } from './components/PathWorkspace'
 import { SettingsWorkspace } from './components/SettingsWorkspace'
 import { Icon } from './components/Icons'
 import { WorkspaceHeaderActions } from './components/WorkspaceHeaderActions'
@@ -147,6 +148,11 @@ function App({ view }: { view: WorkspaceView }) {
         showHeaderActions
       /> : activeRepository && (view === 'symbols' || view === 'callers') ? <SymbolsWorkspace
         key={`symbols-${activeRepository.repositoryId}`}
+        repositoryId={activeRepository.repositoryId}
+        repositoryName={activeRepository.name}
+        showHeaderActions
+      /> : activeRepository && view === 'paths' ? <PathWorkspace
+        key={`paths-${activeRepository.repositoryId}`}
         repositoryId={activeRepository.repositoryId}
         repositoryName={activeRepository.name}
         showHeaderActions

@@ -127,6 +127,36 @@ export interface CallTraceResult {
   }>
 }
 
+export type RelationshipType = 'CALLS' | 'IMPORTS' | 'IMPLEMENTS' | 'EXTENDS'
+
+export interface RepositoryPathRequest {
+  fromSymbolId: string
+  toSymbolId: string
+  maxDepth: number
+  relationshipTypes?: RelationshipType[]
+}
+
+export interface RepositoryPathStep {
+  symbol: GraphSymbolReference
+  depth: number
+  relationshipFromPrevious: { id: string; type: RelationshipType; fromSymbolId: string; toSymbolId: string } | null
+  file: { id: string; path: string; language: string | null }
+}
+
+export interface RepositoryPathResult {
+  repositoryId: string
+  found: boolean
+  pathLength: number
+  maxDepth: number
+  relationshipTypes: RelationshipType[]
+  steps: RepositoryPathStep[]
+  paths: RepositoryPathStep[][]
+  edgeProcessingLimit: number
+  traversalTruncated: boolean
+  alternativePathsTruncated: boolean
+  pathsTruncated: boolean
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response
   try {
@@ -191,6 +221,10 @@ export const repositoryApi = {
   getCallees: (repositoryId: string, symbolId: string, signal?: AbortSignal) =>
     request<CallTraceResult>(`/repositories/${encodeURIComponent(repositoryId)}/trace/callees`, {
       method: 'POST', body: JSON.stringify({ symbolId, maxDepth: 1 }), signal,
+    }),
+  findPaths: (repositoryId: string, pathRequest: RepositoryPathRequest, signal?: AbortSignal) =>
+    request<RepositoryPathResult>(`/repositories/${encodeURIComponent(repositoryId)}/query/path`, {
+      method: 'POST', body: JSON.stringify(pathRequest), signal,
     }),
 }
 
