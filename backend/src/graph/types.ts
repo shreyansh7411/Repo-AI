@@ -45,6 +45,21 @@ export interface PathStep {
     relationshipFromPrevious: { id: string; type: RelationshipType; fromSymbolId: string; toSymbolId: string } | null;
 }
 
+export interface GraphPathResult {
+    repositoryId: string;
+    found: boolean;
+    maxDepth: number;
+    relationshipTypes: RelationshipType[];
+    /** First deterministic shortest path, retained for existing API consumers. */
+    steps: PathStep[];
+    /** Up to five distinct paths, all at the shortest discovered distance. */
+    paths: PathStep[][];
+    edgeProcessingLimit: number;
+    traversalTruncated: boolean;
+    alternativePathsTruncated: boolean;
+    pathsTruncated: boolean;
+}
+
 export type ImpactCategory = "caller" | "importer" | "implementor" | "subclass";
 export type ImpactClassification = "direct" | "indirect";
 

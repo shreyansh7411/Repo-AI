@@ -266,8 +266,16 @@ POST /api/repositories/{repositoryId}/trace/path
 {"fromSymbolId":"<symbol-uuid>","toSymbolId":"<symbol-uuid>","maxDepth":5}
 ```
 
-Trace and impact depth values are limited to 1–5. Path requests can also
-provide a non-empty `relationshipTypes` array.
+Trace and impact depth values are limited to 1–5. Path requests are directed
+walks following each relationship's stored source-to-target direction. They
+default to `CALLS`; callers can pass a non-empty `relationshipTypes` array
+containing any combination of `CALLS`, `IMPORTS`, `IMPLEMENTS`, and `EXTENDS`.
+The path API returns up to five distinct shortest paths only. `steps` remains
+the first deterministic shortest path for compatibility; `paths` contains all
+returned alternatives. `traversalTruncated` reports the shared 10,000-edge
+search budget, `alternativePathsTruncated` reports additional shortest paths
+omitted beyond five, and `pathsTruncated` is true when either condition occurs.
+These are static graph paths, not proof of runtime execution.
 
 ### Unified repository query API
 
@@ -293,6 +301,8 @@ POST /api/repositories/{repositoryId}/query/path
 
 Search modes are `semantic`, `structural`, and `hybrid`. Structural modes
 remain usable without Gemini. Hybrid graph expansion is capped at depth 2.
+Unified path requests accept the same optional `relationshipTypes` filter and
+use `CALLS` when it is omitted.
 
 ## Database notes
 

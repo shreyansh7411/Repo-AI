@@ -1,13 +1,18 @@
 import { GraphRepository } from "./graph-repository.js";
-import type { GraphRelationship, GraphSymbol, ImpactAffectedFile, ImpactAffectedSymbol, ImpactAnalysisResult, ImpactCategory, ImpactEvidence, ImpactEvidencePath, ImpactPathEvidence, PathStep, RelationshipType, TraversalDirection, TraversalHit, TraversalResult } from "./types.js";
+import type { GraphPathResult, GraphRelationship, GraphSymbol, ImpactAffectedFile, ImpactAffectedSymbol, ImpactAnalysisResult, ImpactCategory, ImpactEvidence, ImpactEvidencePath, ImpactPathEvidence, PathStep, RelationshipType, TraversalDirection, TraversalHit, TraversalResult } from "./types.js";
 
 const MAX_IMPACT_EVIDENCE_PATHS = 5;
-export const DEFAULT_IMPACT_RESOURCE_LIMITS = Object.freeze({ maxProcessedEdges: 10000, maxResults: 1000 });
+const MAX_SHORTEST_PATHS = 5;
 
 export interface ImpactResourceLimits {
     maxProcessedEdges: number;
     maxResults: number;
 }
+
+export const DEFAULT_IMPACT_RESOURCE_LIMITS: Readonly<ImpactResourceLimits> = Object.freeze({
+    maxProcessedEdges: 10000,
+    maxResults: 1000
+});
 
 export class GraphAnalysisError extends Error {
     constructor(readonly code: "REPOSITORY_NOT_FOUND" | "SYMBOL_NOT_FOUND", message: string) {
@@ -15,7 +20,35 @@ export class GraphAnalysisError extends Error {
     }
 }
 
-interface PreviousStep { previousId: string; edge: GraphRelationship }
+interface ShortestPathState {
+    current: GraphSymbol;
+    steps: PathStep[];
+    visited: Set<string>;
+}
+
+function compareOutgoingRelationships(a: GraphRelationship, b: GraphRelationship): number {
+    return compareSymbols(a.target, b.target) || a.type.localeCompare(b.type) || a.id.localeCompare(b.id);
+}
+
+function compareShortestPathStates(a: ShortestPathState, b: ShortestPathState): number {
+    return compareSymbols(a.current, b.current) || compareStepPaths(a.steps, b.steps);
+}
+
+function compareStepPaths(a: PathStep[], b: PathStep[]): number {
+    for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+        const symbolOrder = compareSymbols(a[index].symbol, b[index].symbol);
+        if (symbolOrder !== 0) return symbolOrder;
+        const aEdge = a[index].relationshipFromPrevious;
+        const bEdge = b[index].relationshipFromPrevious;
+        const edgeOrder = (aEdge?.type ?? "").localeCompare(bEdge?.type ?? "") || (aEdge?.id ?? "").localeCompare(bEdge?.id ?? "");
+        if (edgeOrder !== 0) return edgeOrder;
+    }
+    return a.length - b.length;
+}
+
+function pathKey(steps: PathStep[]): string {
+    return steps.map(step => `${step.symbol.id}:${step.relationshipFromPrevious?.id ?? "start"}`).join("/");
+}
 interface ImpactPathState {
     current: GraphSymbol;
     symbols: GraphSymbol[];
@@ -60,52 +93,85 @@ export class GraphTraversalService {
     }
 
     async shortestPath(repositoryId: string, fromSymbolId: string, toSymbolId: string, maxDepth: number,
-        relationshipTypes: RelationshipType[]): Promise<{ repositoryId: string; found: boolean; maxDepth: number; relationshipTypes: RelationshipType[]; steps: PathStep[] }> {
+        relationshipTypes: RelationshipType[]): Promise<GraphPathResult> {
         const [from, to] = await Promise.all([
             this.requireSymbol(repositoryId, fromSymbolId),
             this.requireSymbol(repositoryId, toSymbolId)
         ]);
-        if (from.id === to.id) return { repositoryId, found: true, maxDepth, relationshipTypes: [...relationshipTypes].sort(),
-            steps: [{ symbol: from, depth: 0, relationshipFromPrevious: null }] };
+        const sortedTypes = [...relationshipTypes].sort();
+        const edgeLimit = this.impactLimits.maxProcessedEdges;
+        const emptyResult = (traversalTruncated = false): GraphPathResult => ({ repositoryId, found: false, maxDepth,
+            relationshipTypes: sortedTypes, steps: [], paths: [], edgeProcessingLimit: edgeLimit,
+            traversalTruncated, alternativePathsTruncated: false, pathsTruncated: traversalTruncated });
+        if (from.id === to.id) {
+            const onlyStep: PathStep[] = [{ symbol: from, depth: 0, relationshipFromPrevious: null }];
+            return { ...emptyResult(), found: true, steps: onlyStep, paths: [onlyStep] };
+        }
 
-        const visited = new Set([from.id]);
-        const previous = new Map<string, PreviousStep>();
-        let frontier = [from];
-        let found = false;
-        for (let depth = 1; depth <= maxDepth && frontier.length; depth++) {
-            const relationships = await this.repository.getAdjacentRelationships(repositoryId, frontier.map(symbol => symbol.id), "OUTGOING", relationshipTypes);
-            const candidates = relationships.map(edge => ({ edge, symbol: edge.target }))
-                .sort((a, b) => compareSymbols(a.symbol, b.symbol) || a.edge.type.localeCompare(b.edge.type) || a.edge.id.localeCompare(b.edge.id));
-            const next: GraphSymbol[] = [];
-            for (const candidate of candidates) {
-                if (visited.has(candidate.symbol.id)) continue;
-                visited.add(candidate.symbol.id);
-                previous.set(candidate.symbol.id, { previousId: candidate.edge.source.id, edge: candidate.edge });
-                next.push(candidate.symbol);
-                if (candidate.symbol.id === to.id) found = true;
+        // One budget covers every examined edge/path-state pair. Each SQL result is
+        // capped at remaining + 1 (one sentinel), and each returned edge is related
+        // to at least one current state, so total materialized adjacency is bounded
+        // by the same budget plus the single truncation sentinel.
+        let remainingEdges = edgeLimit;
+        let traversalTruncated = false;
+        let alternativePathsTruncated = false;
+        let frontier: ShortestPathState[] = [{ current: from,
+            steps: [{ symbol: from, depth: 0, relationshipFromPrevious: null }], visited: new Set([from.id]) }];
+        let shortestPaths: PathStep[][] = [];
+
+        for (let depth = 1; depth <= maxDepth && frontier.length > 0; depth += 1) {
+            frontier.sort(compareShortestPathStates);
+            const bounded = await this.repository.getAdjacentRelationshipsBounded(repositoryId,
+                [...new Set(frontier.map(state => state.current.id))], "OUTGOING", relationshipTypes, remainingEdges);
+            if (bounded.hasMore) traversalTruncated = true;
+
+            const edgesBySource = new Map<string, GraphRelationship[]>();
+            for (const edge of bounded.relationships) {
+                const adjacent = edgesBySource.get(edge.source.id) ?? [];
+                adjacent.push(edge);
+                edgesBySource.set(edge.source.id, adjacent);
             }
-            if (found) break;
+            for (const adjacent of edgesBySource.values()) adjacent.sort(compareOutgoingRelationships);
+
+            const next: ShortestPathState[] = [];
+            const pathKeys = new Set<string>();
+            candidateLoop: for (const state of frontier) {
+                for (const edge of edgesBySource.get(state.current.id) ?? []) {
+                    if (remainingEdges === 0) {
+                        traversalTruncated = true;
+                        break candidateLoop;
+                    }
+                    remainingEdges -= 1;
+                    if (state.visited.has(edge.target.id)) continue;
+                    const step: PathStep = { symbol: edge.target, depth,
+                        relationshipFromPrevious: { id: edge.id, type: edge.type,
+                            fromSymbolId: edge.source.id, toSymbolId: edge.target.id } };
+                    const steps = [...state.steps, step];
+                    if (edge.target.id === to.id) {
+                        const key = pathKey(steps);
+                        if (!pathKeys.has(key)) {
+                            pathKeys.add(key);
+                            if (shortestPaths.length < MAX_SHORTEST_PATHS) shortestPaths.push(steps);
+                            else alternativePathsTruncated = true;
+                        }
+                        continue;
+                    }
+                    const visited = new Set(state.visited);
+                    visited.add(edge.target.id);
+                    next.push({ current: edge.target, steps, visited });
+                }
+            }
+            // Every path in `frontier` is at the same depth. Finish this level to collect
+            // equal-length alternatives, but never expand a deeper level after a hit.
+            if (shortestPaths.length > 0 || bounded.hasMore || traversalTruncated) break;
             frontier = next;
         }
-        if (!found) return { repositoryId, found: false, maxDepth, relationshipTypes: [...relationshipTypes].sort(), steps: [] };
-        const reverseSymbols: GraphSymbol[] = [to];
-        const reverseEdges: GraphRelationship[] = [];
-        let current = to.id;
-        while (current !== from.id) {
-            const step = previous.get(current);
-            if (!step) return { repositoryId, found: false, maxDepth, relationshipTypes: [...relationshipTypes].sort(), steps: [] };
-            reverseEdges.push(step.edge);
-            reverseSymbols.push(step.edge.source);
-            current = step.previousId;
-        }
-        reverseSymbols.reverse();
-        reverseEdges.reverse();
-        const steps: PathStep[] = reverseSymbols.map((symbol, index) => {
-            const edge = reverseEdges[index - 1];
-            return { symbol, depth: index, relationshipFromPrevious: edge ? { id: edge.id, type: edge.type,
-                fromSymbolId: edge.source.id, toSymbolId: edge.target.id } : null };
-        });
-        return { repositoryId, found: true, maxDepth, relationshipTypes: [...relationshipTypes].sort(), steps };
+
+        shortestPaths.sort(compareStepPaths);
+        const firstPath = shortestPaths[0] ?? [];
+        return { repositoryId, found: firstPath.length > 0, maxDepth, relationshipTypes: sortedTypes,
+            steps: firstPath, paths: shortestPaths, edgeProcessingLimit: edgeLimit, traversalTruncated,
+            alternativePathsTruncated, pathsTruncated: traversalTruncated || alternativePathsTruncated };
     }
 
     async impact(repositoryId: string, symbolId: string, maxDepth: number): Promise<ImpactAnalysisResult> {

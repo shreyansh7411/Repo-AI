@@ -85,14 +85,19 @@ async function run() {
         assert.deepEqual(new Set(callers.results.filter(hit => hit.depth === 2).map(hit => hit.symbol.id)), new Set([a,e]));
         assert.equal(callers.results.find(hit => hit.symbol.id === a)?.symbol.parentSymbolName, "Controller");
 
-        const shortest = await request<{ found: boolean; steps: Array<{ symbol: { id: string }; depth: number; relationshipFromPrevious: { type: string } | null }> }>(
-            "/trace/path", { fromSymbolId: a, toSymbolId: c, maxDepth: 5, relationshipTypes: ["CALLS"] });
+        const shortest = await request<{ found: boolean; paths: Array<Array<{ symbol: { id: string }; depth: number; relationshipFromPrevious: { type: string; fromSymbolId: string; toSymbolId: string } | null }>>;
+            steps: Array<{ symbol: { id: string }; depth: number; relationshipFromPrevious: { type: string } | null }>; relationshipTypes: string[] }>(
+            "/trace/path", { fromSymbolId: a, toSymbolId: c, maxDepth: 5 });
         assert.equal(shortest.found, true);
         assert.deepEqual(shortest.steps.map(step => step.symbol.id), [a,b,c]);
         assert.deepEqual(shortest.steps.map(step => step.relationshipFromPrevious?.type ?? null), [null,"CALLS","CALLS"]);
-        const noPath = await request<{ found: boolean; steps: unknown[] }>(
+        assert.deepEqual(shortest.relationshipTypes, ["CALLS"], "CALLS is the default path filter");
+        assert.equal(shortest.paths.length, 1);
+        assert.deepEqual(shortest.paths[0].map(step => step.symbol.id), [a,b,c]);
+        const noPath = await request<{ found: boolean; steps: unknown[]; paths: unknown[][]; relationshipTypes: string[]; traversalTruncated: boolean; alternativePathsTruncated: boolean; pathsTruncated: boolean; edgeProcessingLimit: number }>(
             "/trace/path", { fromSymbolId: contract, toSymbolId: a, maxDepth: 5, relationshipTypes: ["CALLS"] });
-        assert.deepEqual(noPath, { repositoryId: repoA, found: false, maxDepth: 5, relationshipTypes: ["CALLS"], steps: [] });
+        assert.deepEqual(noPath, { repositoryId: repoA, found: false, maxDepth: 5, relationshipTypes: ["CALLS"], steps: [], paths: [],
+            edgeProcessingLimit: 10000, traversalTruncated: false, alternativePathsTruncated: false, pathsTruncated: false });
         const importPath = await request<{ found: boolean; steps: Array<{ symbol: { id: string }; relationshipFromPrevious: { type: string } | null }> }>(
             "/trace/path", { fromSymbolId: importer, toSymbolId: c, maxDepth: 1, relationshipTypes: ["IMPORTS"] });
         assert.equal(importPath.found, true);
@@ -104,7 +109,7 @@ async function run() {
             implementations: Array<{ symbolId: string; relationshipType: string; category: string }>;
             implementors: Array<{ symbolId: string; category: string }>;
             subclasses: Array<{ symbolId: string; category: string }>;
-            affectedSymbols: Array<{ symbol: { id: string }; categories: string[]; evidencePaths: Array<{ category: string }> }>;
+            affectedSymbols: Array<{ symbol: { id: string }; categories: string[]; evidenceScopes: string[]; evidencePaths: Array<{ category: string }> }>;
             pathsTruncated: boolean;
             affectedFiles: Array<{ fileId: string; path: string; minDepth: number; symbols: Array<{ symbolId: string }> }> }>(
             "/impact", { symbolId: c, maxDepth: 5 });

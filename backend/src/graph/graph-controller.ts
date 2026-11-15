@@ -63,5 +63,5 @@ export async function impactHandler(req: Request, res: Response) {
 
 export async function pathHandler(req: Request, res: Response) {
     return respond(req, res, (repositoryId, body) => service.shortestPath(repositoryId, symbolId(body, "fromSymbolId"),
-        symbolId(body, "toSymbolId"), maxDepth(body, 5), relationshipTypes(body, [...RELATIONSHIP_TYPES])));
+        symbolId(body, "toSymbolId"), maxDepth(body, 5), relationshipTypes(body, ["CALLS"])));
 }

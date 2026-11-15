@@ -94,6 +94,12 @@ export interface RepositoryPathResult {
     pathLength: number;
     maxDepth: number;
     steps: Array<PathStep & { file: { id: string; path: string; language: string | null } }>;
+    paths: Array<Array<PathStep & { file: { id: string; path: string; language: string | null } }>>;
+    relationshipTypes: RelationshipType[];
+    edgeProcessingLimit: number;
+    traversalTruncated: boolean;
+    alternativePathsTruncated: boolean;
+    pathsTruncated: boolean;
 }
 
 export type RepositoryImpactResult = ImpactAnalysisResult;

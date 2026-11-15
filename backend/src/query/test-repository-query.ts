@@ -16,6 +16,7 @@ const targetSymbol: GraphSymbol = { ...sourceSymbol, id: "00000000-0000-4000-800
 
 function makeService(embeddingFails = false, repositoryExists = true) {
     const calls: string[] = [];
+    const pathTypeCalls: string[][] = [];
     const structuralSource = { id: sourceSymbol.id, repositoryId, fileId: "file-a", filePath: "src/reconcile.ts", language: "typescript", name: "reconcile", symbolType: "METHOD", startLine: 2, endLine: 8, signature: "reconcile()" };
     const structuralTarget = { id: targetSymbol.id, repositoryId, fileId: "file-b", filePath: "src/store.ts", language: "typescript", name: "save", symbolType: "METHOD", startLine: 3, endLine: 5, signature: "save()" };
     const dependencies = {
@@ -58,10 +59,16 @@ function makeService(embeddingFails = false, repositoryExists = true) {
                 traversalTruncated: false, evidencePathsTruncated: false, resultsTruncated: false, pathsTruncated: false,
                 interpretation: "Static graph evidence."
             }; },
-            shortestPath: async () => { calls.push("path"); return { repositoryId, found: true, maxDepth: 5, relationshipTypes: ["CALLS" as const], steps: [{ symbol: sourceSymbol, depth: 0, relationshipFromPrevious: null }, { symbol: targetSymbol, depth: 1, relationshipFromPrevious: { id: "edge-id", type: "CALLS" as const, fromSymbolId: sourceSymbol.id, toSymbolId: targetSymbol.id } }] }; }
+            shortestPath: async (_repo: string, _from: string, _to: string, _depth: number, types: Array<"CALLS" | "IMPORTS" | "IMPLEMENTS" | "EXTENDS"> = ["CALLS"]) => {
+                calls.push("path"); pathTypeCalls.push(types);
+                const steps = [{ symbol: sourceSymbol, depth: 0, relationshipFromPrevious: null }, { symbol: targetSymbol, depth: 1,
+                    relationshipFromPrevious: { id: "edge-id", type: "CALLS" as const, fromSymbolId: sourceSymbol.id, toSymbolId: targetSymbol.id } }];
+                return { repositoryId, found: true, maxDepth: 5, relationshipTypes: [...types].sort(), steps, paths: [steps], edgeProcessingLimit: 10000,
+                    traversalTruncated: false, alternativePathsTruncated: false, pathsTruncated: false };
+            }
         }
     } as unknown as RepositoryQueryDependencies;
-    return { service: new RepositoryQueryService(dependencies), calls };
+    return { service: new RepositoryQueryService(dependencies), calls, pathTypeCalls };
 }
 
 function fakeResponse() {
@@ -72,7 +79,7 @@ function fakeResponse() {
 }
 
 async function unitTests() {
-    const { service, calls } = makeService();
+    const { service, calls, pathTypeCalls } = makeService();
     const symbol = await service.symbol(repositoryId, sourceSymbol.id);
     assert.equal(symbol.signature, "reconcile()");
     const symbols = await service.listSymbols(repositoryId, { page: 1, pageSize: 10, type: null, search: null });
@@ -104,6 +111,10 @@ async function unitTests() {
     const path = await service.path(repositoryId, sourceSymbol.id, targetSymbol.id, 5);
     assert.equal(path.pathLength, 1);
     assert.equal(path.steps[1].relationshipFromPrevious?.type, "CALLS");
+    assert.equal(path.paths.length, 1);
+    assert.deepEqual(pathTypeCalls.at(-1), ["CALLS"], "unified query path defaults to CALLS only");
+    await service.path(repositoryId, sourceSymbol.id, targetSymbol.id, 5, ["CALLS", "IMPORTS"]);
+    assert.deepEqual(pathTypeCalls.at(-1), ["CALLS", "IMPORTS"], "selected filters are passed to the graph service");
 
     const failureService = makeService(true).service;
     const fallback = await failureService.search(repositoryId, "reconcile", "semantic", 5, 1);
@@ -134,6 +145,11 @@ async function unitTests() {
         const response = fakeResponse();
         await targetHandler({ params: { repositoryId }, body } as unknown as Request, response.response);
         assert.equal(response.status(), expected);
+    }
+    for (const relationshipTypes of [[], ["USES"], "CALLS"] as const) {
+        const invalidPathFilter = fakeResponse();
+        await handlers.path({ params: { repositoryId }, body: { fromSymbolId: sourceSymbol.id, toSymbolId: targetSymbol.id, relationshipTypes } } as unknown as Request, invalidPathFilter.response);
+        assert.equal(invalidPathFilter.status(), 400, "invalid path relationship filters are rejected");
     }
     console.log("Repository query unit tests passed: lookup, search delegation, trace, impact, path, evidence, fallback, and validation.");
 }
@@ -213,8 +229,15 @@ async function postgresAndApiTests() {
         assert.deepEqual(realCaller.evidencePaths[0].symbols.map(symbol => symbol.id), [target, source]);
         assert.ok(realCaller.evidencePaths[0].relationships.some(item => item.source.id === source && item.target.id === target && item.type === "CALLS"));
         assert.ok(Array.isArray(impact.affectedSymbols));
-        const path = await post<{ found: boolean; pathLength: number; steps: Array<{ symbol: { id: string }; file: { path: string } }> }>("path", { fromSymbolId: source, toSymbolId: target, maxDepth: 5 });
+        const path = await post<{ found: boolean; pathLength: number; relationshipTypes: string[]; paths: Array<Array<{ symbol: { id: string }; file: { path: string }; relationshipFromPrevious: { type: string } | null }>>;
+            steps: Array<{ symbol: { id: string }; file: { path: string } }>; traversalTruncated: boolean; alternativePathsTruncated: boolean }>(
+            "path", { fromSymbolId: source, toSymbolId: target, maxDepth: 5 });
         assert.equal(path.found, true); assert.equal(path.pathLength, 1); assert.equal(path.steps.length, 2);
+        assert.deepEqual(path.relationshipTypes, ["CALLS"]); assert.equal(path.paths.length, 1);
+        assert.equal(path.paths[0][1].relationshipFromPrevious?.type, "CALLS");
+        assert.equal(path.traversalTruncated, false); assert.equal(path.alternativePathsTruncated, false);
+        const invalidPathFilter = await post<{ error: { code: string } }>("path", { fromSymbolId: source, toSymbolId: target, relationshipTypes: ["USES"] }, 400);
+        assert.equal(invalidPathFilter.error.code, "INVALID_REQUEST");
         const isolatedSymbol = await post<{ error: { code: string } }>("symbol", { symbolId: foreignSymbolId }, 404);
         assert.equal(isolatedSymbol.error.code, "SYMBOL_NOT_FOUND");
         const isolatedFile = await post<{ error: { code: string } }>("file", { path: "foreign.ts" }, 404);

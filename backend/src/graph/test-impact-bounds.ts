@@ -12,6 +12,7 @@ interface OwnedRelationship { repositoryId: string; relationship: GraphRelations
 class SyntheticGraphRepository {
     readonly adjacencyBudgets: number[] = [];
     readonly adjacencyTypes: RelationshipType[][] = [];
+    readonly adjacencyDirections: Array<"INCOMING" | "OUTGOING"> = [];
 
     constructor(private readonly symbols: OwnedSymbol[], private readonly edges: OwnedRelationship[]) {}
 
@@ -19,9 +20,10 @@ class SyntheticGraphRepository {
         return this.symbols.find(item => item.repositoryId === ownerId && item.symbol.id === symbolId)?.symbol ?? null;
     }
 
-    async getAdjacentRelationshipsBounded(ownerId: string, ids: string[], direction: "INCOMING", types: RelationshipType[], remaining: number) {
+    async getAdjacentRelationshipsBounded(ownerId: string, ids: string[], direction: "INCOMING" | "OUTGOING", types: RelationshipType[], remaining: number) {
         this.adjacencyBudgets.push(remaining);
         this.adjacencyTypes.push([...types]);
+        this.adjacencyDirections.push(direction);
         const matches = this.edges.filter(item => item.repositoryId === ownerId && types.includes(item.relationship.type) &&
             (direction === "INCOMING" ? ids.includes(item.relationship.target.id) : ids.includes(item.relationship.source.id)))
             .map(item => item.relationship)
@@ -164,7 +166,106 @@ async function testPathLimitCyclesIsolationAndLegacyOrder() {
     assert.deepEqual(legacy.implementations[0].evidencePaths.map(path => path.category), ["subclass", "implementor"]);
 }
 
+async function testShortestPaths() {
+    const source = symbol("path-source", "source", "src/source.ts");
+    const target = symbol("path-target", "target", "src/target.ts");
+    const intermediates = Array.from({ length: 6 }, (_, index) => symbol(`path-mid-${index}`, `mid${index}`, `src/mid-${index}.ts`));
+    const longer = symbol("path-longer", "longer", "src/longer.ts");
+    const isolated = symbol("path-isolated", "isolated", "src/isolated.ts");
+    const nodes = [source, target, ...intermediates, longer, isolated];
+    const edges = [
+        edge("direct", source, target),
+        ...intermediates.flatMap((middle, index) => [edge(`first-${index}`, source, middle), edge(`last-${index}`, middle, target)]),
+        edge("longer-first", source, longer), edge("longer-last", longer, target),
+        edge("cycle-back", intermediates[0], source),
+        edge("reverse-edge", target, source),
+        edge("import-shortcut", source, target, "IMPORTS"),
+        edge("implements-shortcut", source, target, "IMPLEMENTS"),
+        edge("extends-shortcut", source, target, "EXTENDS")
+    ];
+    const service = makeService(nodes, edges, { maxProcessedEdges: 100, maxResults: 100 });
+    const direct = await service.service.shortestPath(repositoryId, source.id, target.id, 5, ["CALLS"]);
+    assert.equal(direct.found, true);
+    assert.equal(direct.paths.length, 1, "longer routes are not used to fill the alternative-path limit");
+    assert.deepEqual(direct.steps.map(step => step.symbol.id), [source.id, target.id]);
+    assert.equal(direct.steps[1].relationshipFromPrevious?.id, "direct");
+    assert.equal(direct.traversalTruncated, false);
+    assert.equal(direct.alternativePathsTruncated, false);
+
+    const alternatives = makeService(nodes, edges.filter(item => item.relationship.id !== "direct" && item.relationship.id !== "longer-first" && item.relationship.id !== "longer-last"),
+        { maxProcessedEdges: 100, maxResults: 100 });
+    const allEqual = await alternatives.service.shortestPath(repositoryId, source.id, target.id, 2, ["CALLS"]);
+    assert.equal(allEqual.paths.length, 5);
+    assert.equal(allEqual.alternativePathsTruncated, true);
+    assert.equal(allEqual.pathsTruncated, true);
+    assert.equal(allEqual.paths.every(path => path.length === 3), true);
+    assert.deepEqual(allEqual.paths.map(path => path.map(step => step.symbol.id)),
+        (await alternatives.service.shortestPath(repositoryId, source.id, target.id, 2, ["CALLS"])).paths.map(path => path.map(step => step.symbol.id)),
+        "equal-length alternatives use deterministic tie-breaking");
+    assert.equal(allEqual.paths.some(path => path.some(step => step.symbol.id === source.id && step.depth > 0)), false,
+        "cycles are excluded within each path");
+
+    const directed = await alternatives.service.shortestPath(repositoryId, target.id, source.id, 2, ["CALLS"]);
+    assert.equal(directed.found, true, "the stored target-to-source edge is followed in its stored direction");
+    assert.equal(directed.paths[0][1].relationshipFromPrevious?.fromSymbolId, target.id);
+    const reverseMissing = await alternatives.service.shortestPath(repositoryId, isolated.id, source.id, 2, ["CALLS"]);
+    assert.equal(reverseMissing.found, false);
+
+    const same = await alternatives.service.shortestPath(repositoryId, source.id, source.id, 0, ["CALLS"]);
+    assert.equal(same.paths.length, 1);
+    assert.equal(same.steps.length, 1);
+    const depthExact = await alternatives.service.shortestPath(repositoryId, source.id, target.id, 2, ["CALLS"]);
+    assert.equal(depthExact.found, true);
+    const depthOverflow = await alternatives.service.shortestPath(repositoryId, source.id, target.id, 1, ["CALLS"]);
+    assert.equal(depthOverflow.found, false, "paths beyond maxDepth are not returned");
+
+    const filtered = await alternatives.service.shortestPath(repositoryId, source.id, target.id, 1, ["IMPORTS"]);
+    assert.equal(filtered.paths[0][1].relationshipFromPrevious?.type, "IMPORTS");
+    for (const relationshipType of ["IMPLEMENTS", "EXTENDS"] as const) {
+        const selected = await service.service.shortestPath(repositoryId, source.id, target.id, 1, [relationshipType]);
+        assert.equal(selected.paths[0][1].relationshipFromPrevious?.type, relationshipType);
+    }
+    const combined = await service.service.shortestPath(repositoryId, source.id, target.id, 1, ["CALLS", "IMPORTS"]);
+    assert.equal(combined.paths.length, 2, "combined filters retain distinct relationship paths");
+
+    const foreignOnly = makeService([source, target], [edge("foreign-only", source, target, "CALLS", foreignRepositoryId)],
+        { maxProcessedEdges: 10, maxResults: 10 });
+    assert.equal((await foreignOnly.service.shortestPath(repositoryId, source.id, target.id, 1, ["CALLS"])).found, false,
+        "foreign repository edges are not traversed");
+}
+
+async function testShortestPathBudgets() {
+    const source = symbol("budget-source", "source", "src/source.ts");
+    const target = symbol("budget-target", "target", "src/a-target.ts");
+    const otherA = symbol("budget-other-a", "otherA", "src/b-other.ts");
+    const otherB = symbol("budget-other-b", "otherB", "src/c-other.ts");
+    const exact = makeService([source, target, otherA], [edge("a-target", source, target), edge("b-other", source, otherA)],
+        { maxProcessedEdges: 2, maxResults: 10 });
+    const exactResult = await exact.service.shortestPath(repositoryId, source.id, target.id, 1, ["CALLS"]);
+    assert.equal(exactResult.found, true);
+    assert.equal(exactResult.traversalTruncated, false, "exact budget use is complete when the sentinel finds no additional edge");
+
+    const exceeded = makeService([source, target, otherA, otherB], [edge("a-target", source, target), edge("b-other", source, otherA), edge("c-other", source, otherB)],
+        { maxProcessedEdges: 2, maxResults: 10 });
+    const exceededResult = await exceeded.service.shortestPath(repositoryId, source.id, target.id, 1, ["CALLS"]);
+    assert.equal(exceededResult.found, true);
+    assert.equal(exceededResult.traversalTruncated, true, "one edge beyond the SQL row budget is detected");
+    assert.equal(exceededResult.pathsTruncated, true);
+    assert.deepEqual(exceededResult, await exceeded.service.shortestPath(repositoryId, source.id, target.id, 1, ["CALLS"]),
+        "the selected path and truncation indicators are deterministic at the budget boundary");
+
+    const middle = symbol("budget-middle", "middle", "src/middle.ts");
+    const shared = makeService([source, middle, target, otherA], [edge("source-middle", source, middle), edge("source-other", source, otherA),
+        edge("middle-target", middle, target), edge("middle-other", middle, otherA)], { maxProcessedEdges: 3, maxResults: 10 });
+    const sharedResult = await shared.service.shortestPath(repositoryId, source.id, target.id, 3, ["CALLS"]);
+    assert.deepEqual(shared.repository.adjacencyBudgets, [3, 1], "the remaining edge budget is shared across BFS levels");
+    assert.deepEqual(shared.repository.adjacencyDirections, ["OUTGOING", "OUTGOING"]);
+    assert.equal(sharedResult.traversalTruncated, true, "the second adjacency query cannot reset the global budget");
+}
+
 await testBoundedAdjacencyQuery();
 await testEdgeBudgets();
 await testPathLimitCyclesIsolationAndLegacyOrder();
+await testShortestPaths();
+await testShortestPathBudgets();
 console.log("Synthetic impact-bound tests passed.");

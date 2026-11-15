@@ -89,13 +89,18 @@ export class RepositoryQueryService {
         return this.deps.graph.impact(repositoryId, symbolId, maxDepth);
     }
 
-    async path(repositoryId: string, fromSymbolId: string, toSymbolId: string, maxDepth: number): Promise<RepositoryPathResult> {
+    async path(repositoryId: string, fromSymbolId: string, toSymbolId: string, maxDepth: number,
+        relationshipTypes: RelationshipType[] = ["CALLS"]): Promise<RepositoryPathResult> {
         await this.requireRepository(repositoryId);
         const result = await this.deps.graph.shortestPath(repositoryId, fromSymbolId, toSymbolId, maxDepth,
-            ["CALLS", "IMPORTS", "IMPLEMENTS", "EXTENDS"]);
+            relationshipTypes);
+        const mapStep = (step: typeof result.steps[number]) => ({ ...step,
+            file: { id: step.symbol.fileId, path: step.symbol.filePath, language: step.symbol.language } });
         return { repositoryId, found: result.found, pathLength: result.found ? Math.max(0, result.steps.length - 1) : 0,
-            maxDepth, steps: result.steps.map(step => ({ ...step,
-                file: { id: step.symbol.fileId, path: step.symbol.filePath, language: step.symbol.language } })) };
+            maxDepth, relationshipTypes: result.relationshipTypes, steps: result.steps.map(mapStep),
+            paths: result.paths.map(path => path.map(mapStep)), edgeProcessingLimit: result.edgeProcessingLimit,
+            traversalTruncated: result.traversalTruncated, alternativePathsTruncated: result.alternativePathsTruncated,
+            pathsTruncated: result.pathsTruncated };
     }
 
     private async semanticSearch(repositoryId: string, query: string, topK: number, maxDepth: number): Promise<RepositorySearchResult> {

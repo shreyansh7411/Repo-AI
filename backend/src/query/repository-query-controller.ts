@@ -4,6 +4,7 @@ import { EmbeddingService } from "../embeddings/embedding-service.js";
 import { GeminiEmbeddingProvider } from "../embeddings/gemini-embedding-provider.js";
 import { GraphRepository } from "../graph/graph-repository.js";
 import { GraphAnalysisError, GraphTraversalService } from "../graph/graph-traversal-service.js";
+import { RELATIONSHIP_TYPES, type RelationshipType } from "../graph/types.js";
 import { HybridRetrievalService } from "../retrieval/hybrid-retrieval-service.js";
 import { StructuralRetrievalRepository } from "../retrieval/structural-retrieval-repository.js";
 import type { SymbolType } from "../parser/symbol-types.js";
@@ -49,7 +50,8 @@ export function createRepositoryQueryHandlers(service: RepositoryQueryService) {
         search: handle((repositoryId, body) => service.search(repositoryId, queryText(body.query), searchMode(body.mode), topK(body.topK), depth(body.maxDepth, 1))),
         trace: handle((repositoryId, body) => service.trace(repositoryId, uuid(body.symbolId, "symbolId"), direction(body.direction), depth(body.maxDepth, 1))),
         impact: handle((repositoryId, body) => service.impact(repositoryId, uuid(body.symbolId, "symbolId"), depth(body.maxDepth, 1))),
-        path: handle((repositoryId, body) => service.path(repositoryId, uuid(body.fromSymbolId, "fromSymbolId"), uuid(body.toSymbolId, "toSymbolId"), depth(body.maxDepth, 5)))
+        path: handle((repositoryId, body) => service.path(repositoryId, uuid(body.fromSymbolId, "fromSymbolId"), uuid(body.toSymbolId, "toSymbolId"),
+            depth(body.maxDepth, 5), relationshipTypes(body)))
     };
 }
 
@@ -86,6 +88,14 @@ function depth(value: unknown, fallback: number): number {
     const parsed = value ?? fallback;
     if (!Number.isInteger(parsed) || Number(parsed) < 1 || Number(parsed) > 5) throw new InvalidQueryRequest("maxDepth must be an integer between 1 and 5.");
     return Number(parsed);
+}
+function relationshipTypes(body: Record<string, unknown>): RelationshipType[] {
+    const value = body.relationshipTypes;
+    if (value === undefined) return ["CALLS"];
+    if (!Array.isArray(value) || value.length === 0 || value.some(type => typeof type !== "string" || !RELATIONSHIP_TYPES.includes(type as RelationshipType))) {
+        throw new InvalidQueryRequest(`relationshipTypes must be a non-empty array containing only ${RELATIONSHIP_TYPES.join(", ")}.`);
+    }
+    return [...new Set(value as RelationshipType[])].sort();
 }
 
 const SYMBOL_TYPES: readonly SymbolType[] = ["CLASS", "INTERFACE", "ENUM", "METHOD", "CONSTRUCTOR", "FUNCTION", "FIELD", "VARIABLE"];
