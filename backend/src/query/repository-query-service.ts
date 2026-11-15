@@ -8,7 +8,7 @@ import type { StructuralRetrievalRepository } from "../retrieval/structural-retr
 import type { StructuralRelationship, StructuralSymbol } from "../retrieval/types.js";
 import type { SymbolType } from "../parser/symbol-types.js";
 import type { RepositoryQueryRepository } from "./repository-query-repository.js";
-import type { RepositoryEvidence, RepositoryPathResult, RepositorySearchMode, RepositorySearchResult, RepositorySymbol, RepositorySymbolPage, RepositoryTraceResult } from "./types.js";
+import type { RepositoryEvidence, RepositoryImpactResult, RepositoryPathResult, RepositorySearchMode, RepositorySearchResult, RepositorySymbol, RepositorySymbolPage, RepositoryTraceResult } from "./types.js";
 
 export class RepositoryQueryError extends Error {
     constructor(readonly status: 400 | 404 | 503 | 502, readonly code: string, message: string) { super(message); }
@@ -84,7 +84,7 @@ export class RepositoryQueryService {
         })) };
     }
 
-    async impact(repositoryId: string, symbolId: string, maxDepth: number) {
+    async impact(repositoryId: string, symbolId: string, maxDepth: number): Promise<RepositoryImpactResult> {
         await this.requireRepository(repositoryId);
         return this.deps.graph.impact(repositoryId, symbolId, maxDepth);
     }

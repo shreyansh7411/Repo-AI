@@ -19,7 +19,7 @@
     "test:verify-graph": "tsx src/ingestion/verify-relationship-graph.ts",
     "test:graph": "tsx src/parser/test-parser.ts && tsx src/parser/test-symbol-extractor.ts && tsx src/parser/test-reference-extractor.ts && tsx src/parser/test-structural-reference-extractor.ts && tsx src/parser/test-symbol-resolver.ts && tsx src/ingestion/test-relationship-repository.ts && tsx src/ingestion/test-relationship-indexing.ts && tsx src/chunking/test-code-chunk-builder.ts && tsx src/ingestion/test-code-chunk-repository.ts",
     "test:milestone5": "tsx src/retrieval/test-hybrid-retrieval.ts && tsx src/retrieval/test-assistant-service.ts && tsx src/ai/test-gemini-llm-provider.ts && tsx src/retrieval/test-retrieval-controller.ts && tsx src/retrieval/test-structural-postgres.ts && tsx src/retrieval/test-hybrid-postgres.ts",
-    "test:milestone6": "tsx src/graph/test-graph-analysis.ts",
+    "test:milestone6": "tsx src/graph/test-impact-bounds.ts && tsx src/graph/test-graph-analysis.ts",
     "test:milestone7": "tsx src/query/test-repository-query.ts",
     "test:symbol-explorer": "tsx src/query/test-symbol-explorer.ts",
     "test:repository-list": "tsx src/ingestion/test-repository-list.ts",

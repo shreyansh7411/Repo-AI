@@ -5,11 +5,12 @@ import type { Request, Response } from "express";
 import { pool } from "../config/database.js";
 import repositoryRoutes from "../ingestion/repository-routes.js";
 import type { GraphSymbol } from "../graph/types.js";
+import { createAuthenticatedTestSession } from "../test-utils/authenticated-test-session.js";
 import type { RepositoryQueryDependencies } from "./repository-query-service.js";
 import { RepositoryQueryService } from "./repository-query-service.js";
 import { createRepositoryQueryHandlers } from "./repository-query-controller.js";
 
-const repositoryId = "d99205ac-705c-4fc5-bd44-47cc7db1973b";
+const repositoryId = randomUUID();
 const sourceSymbol: GraphSymbol = { id: "00000000-0000-4000-8000-000000000001", name: "reconcile", type: "METHOD", fileId: "file-a", filePath: "src/reconcile.ts", language: "typescript", startLine: 2, endLine: 8, parentSymbolId: null, parentSymbolName: null, parentSymbolType: null };
 const targetSymbol: GraphSymbol = { ...sourceSymbol, id: "00000000-0000-4000-8000-000000000002", name: "save", fileId: "file-b", filePath: "src/store.ts", startLine: 3, endLine: 5 };
 
@@ -39,7 +40,24 @@ function makeService(embeddingFails = false, repositoryExists = true) {
         ], context: "", contextChars: 0, truncated: false }; } },
         graph: {
             trace: async (_repo: string, id: string, direction: "INCOMING" | "OUTGOING", maxDepth: number) => ({ repositoryId, direction, target: id === sourceSymbol.id ? sourceSymbol : targetSymbol, maxDepth, relationshipTypes: ["CALLS" as const], results: [{ symbol: targetSymbol, depth: 1, direct: true, relationship: { id: "edge-id", type: "CALLS" as const, fromSymbolId: sourceSymbol.id, toSymbolId: targetSymbol.id } }] }),
-            impact: async () => { calls.push("impact"); return { target: sourceSymbol, callers: [], importers: [], implementations: [], affectedFiles: [], maxDepth: 2 }; },
+            impact: async () => { calls.push("impact"); return {
+                repositoryId, target: sourceSymbol, maxDepth: 2,
+                callers: [{ symbolId: targetSymbol.id, name: targetSymbol.name, type: targetSymbol.type, fileId: targetSymbol.fileId,
+                    filePath: targetSymbol.filePath, language: targetSymbol.language, startLine: targetSymbol.startLine, endLine: targetSymbol.endLine,
+                    parentSymbolId: null, parentSymbolName: null, depth: 1, direct: true, relationshipType: "CALLS", relationshipId: "impact-edge",
+                    category: "caller", evidenceScope: "SYMBOL", classification: "direct", minDepth: 1, symbol: targetSymbol,
+                    file: { id: targetSymbol.fileId, path: targetSymbol.filePath, language: targetSymbol.language },
+                    evidencePaths: [{ direction: "INCOMING", symbols: [sourceSymbol, targetSymbol], relationships: [{ id: "impact-edge", type: "CALLS", source: targetSymbol, target: sourceSymbol }] }],
+                    additionalPathsOmitted: false }],
+                importers: [], implementations: [], implementors: [], subclasses: [],
+                affectedSymbols: [{ symbol: targetSymbol, file: { id: targetSymbol.fileId, path: targetSymbol.filePath, language: targetSymbol.language },
+                    categories: ["caller"], evidenceScopes: ["SYMBOL"], classification: "direct", minDepth: 1,
+                    evidencePaths: [{ direction: "INCOMING", category: "caller", symbols: [sourceSymbol, targetSymbol], relationships: [{ id: "impact-edge", type: "CALLS", source: targetSymbol, target: sourceSymbol }] }],
+                    additionalPathsOmitted: false }],
+                affectedFiles: [], edgeProcessingLimit: 10000, resultLimit: 1000, evidencePathLimit: 5,
+                traversalTruncated: false, evidencePathsTruncated: false, resultsTruncated: false, pathsTruncated: false,
+                interpretation: "Static graph evidence."
+            }; },
             shortestPath: async () => { calls.push("path"); return { repositoryId, found: true, maxDepth: 5, relationshipTypes: ["CALLS" as const], steps: [{ symbol: sourceSymbol, depth: 0, relationshipFromPrevious: null }, { symbol: targetSymbol, depth: 1, relationshipFromPrevious: { id: "edge-id", type: "CALLS" as const, fromSymbolId: sourceSymbol.id, toSymbolId: targetSymbol.id } }] }; }
         }
     } as unknown as RepositoryQueryDependencies;
@@ -80,7 +98,9 @@ async function unitTests() {
     assert.equal(callers.results[0].relationship.type, "CALLS");
     assert.deepEqual(callers, await service.trace(repositoryId, sourceSymbol.id, "callers", 2), "same graph query should serialize deterministically");
     await service.trace(repositoryId, sourceSymbol.id, "callees", 2);
-    await service.impact(repositoryId, sourceSymbol.id, 2);
+    const impact = await service.impact(repositoryId, sourceSymbol.id, 2);
+    assert.equal(impact.affectedSymbols[0].evidencePaths[0].relationships[0].id, "impact-edge", "query layer preserves graph evidence paths");
+    assert.equal(impact.callers[0].category, "caller");
     const path = await service.path(repositoryId, sourceSymbol.id, targetSymbol.id, 5);
     assert.equal(path.pathLength, 1);
     assert.equal(path.steps[1].relationshipFromPrevious?.type, "CALLS");
@@ -119,59 +139,93 @@ async function unitTests() {
 }
 
 async function postgresAndApiTests() {
-    const productionSymbol = await pool.query<{ id: string; fileId: string; path: string; name: string }>(
-        `SELECT s.id, s.file_id AS "fileId", f.path, s.name FROM symbols s JOIN files f ON f.id=s.file_id
-         WHERE s.repository_id=$1 ORDER BY s.start_line, s.id LIMIT 1`, [repositoryId]);
-    assert.ok(productionSymbol.rows[0], "production repository needs indexed symbols");
-    const productionFile = await pool.query<{ path: string }>("SELECT path FROM files WHERE repository_id=$1 ORDER BY path LIMIT 1", [repositoryId]);
-    assert.ok(productionFile.rows[0]);
-    const edge = await pool.query<{ sourceId: string; targetId: string; sourceName: string; targetName: string; sourcePath: string; targetPath: string }>(
-        `SELECT r.source_symbol_id AS "sourceId", r.target_symbol_id AS "targetId", src.name AS "sourceName", dst.name AS "targetName",
-                sf.path AS "sourcePath", tf.path AS "targetPath"
-         FROM relationships r JOIN symbols src ON src.id=r.source_symbol_id JOIN files sf ON sf.id=src.file_id
-         JOIN symbols dst ON dst.id=r.target_symbol_id JOIN files tf ON tf.id=dst.file_id
-         WHERE r.repository_id=$1 AND r.type='CALLS' ORDER BY r.id LIMIT 1`, [repositoryId]);
-    assert.ok(edge.rows[0], "production repository needs CALLS edges");
-
+    const session = await createAuthenticatedTestSession();
     const suffix = randomUUID();
-    const foreignRepoId = (await pool.query<{ id: string }>("INSERT INTO repositories(name,url) VALUES($1::varchar,$1::text) RETURNING id", [`m7-isolation-${suffix}`])).rows[0].id;
     let server: ReturnType<express.Express["listen"]> | undefined;
     try {
-        const foreignFileId = (await pool.query<{ id: string }>("INSERT INTO files(repository_id,path,language) VALUES($1,'foreign.ts','typescript') RETURNING id", [foreignRepoId])).rows[0].id;
-        const foreignSymbolId = (await pool.query<{ id: string }>("INSERT INTO symbols(repository_id,file_id,name,type,start_line,end_line) VALUES($1,$2,'foreign','FUNCTION',1,1) RETURNING id", [foreignRepoId, foreignFileId])).rows[0].id;
+        const fixtureRepositoryId = (await pool.query<{ id: string }>(
+            "INSERT INTO repositories(name,url,owner_user_id) VALUES($1,$2,$3) RETURNING id",
+            [`m7-query-${suffix}`, `https://example.test/m7-query-${suffix}.git`, session.userId]
+        )).rows[0].id;
+        const foreignRepoId = (await pool.query<{ id: string }>(
+            "INSERT INTO repositories(name,url,owner_user_id) VALUES($1,$2,$3) RETURNING id",
+            [`m7-isolation-${suffix}`, `https://example.test/m7-isolation-${suffix}.git`, session.userId]
+        )).rows[0].id;
+        const sourceFileId = (await pool.query<{ id: string }>(
+            "INSERT INTO files(repository_id,path,language,size,hash) VALUES($1,$2,'typescript',128,$3) RETURNING id",
+            [fixtureRepositoryId, "src/reconciliation.ts", `hash-${suffix}`]
+        )).rows[0].id;
+        const targetFileId = (await pool.query<{ id: string }>(
+            "INSERT INTO files(repository_id,path,language,size,hash) VALUES($1,$2,'typescript',64,$3) RETURNING id",
+            [fixtureRepositoryId, "src/payment-store.ts", `store-${suffix}`]
+        )).rows[0].id;
+        const source = (await pool.query<{ id: string }>(
+            `INSERT INTO symbols(repository_id,file_id,name,type,start_line,end_line,signature)
+             VALUES($1,$2,'reconcilePayment','METHOD',2,8,'reconcilePayment()') RETURNING id`,
+            [fixtureRepositoryId, sourceFileId]
+        )).rows[0].id;
+        const target = (await pool.query<{ id: string }>(
+            `INSERT INTO symbols(repository_id,file_id,name,type,start_line,end_line,signature)
+             VALUES($1,$2,'savePayment','METHOD',3,6,'savePayment(payment)') RETURNING id`,
+            [fixtureRepositoryId, targetFileId]
+        )).rows[0].id;
+        const foreignFileId = (await pool.query<{ id: string }>(
+            "INSERT INTO files(repository_id,path,language) VALUES($1,'foreign.ts','typescript') RETURNING id", [foreignRepoId]
+        )).rows[0].id;
+        const foreignSymbolId = (await pool.query<{ id: string }>(
+            "INSERT INTO symbols(repository_id,file_id,name,type,start_line,end_line) VALUES($1,$2,'foreign','FUNCTION',1,1) RETURNING id",
+            [foreignRepoId, foreignFileId]
+        )).rows[0].id;
+        await pool.query("INSERT INTO relationships(repository_id,source_symbol_id,target_symbol_id,type) VALUES($1,$2,$3,'CALLS')",
+            [fixtureRepositoryId, source, target]);
+        await pool.query(
+            "INSERT INTO code_chunks(repository_id,file_id,symbol_id,start_line,end_line,content) VALUES($1,$2,$3,2,8,$4)",
+            [fixtureRepositoryId, sourceFileId, source, "async function reconcilePayment() { return savePayment(); }"]
+        );
+
         const app = express(); app.use(express.json()); app.use("/api/repositories", repositoryRoutes);
         server = app.listen(0);
         await new Promise<void>(resolve => server?.once("listening", resolve));
         const address = server.address();
         assert.ok(address && typeof address !== "string");
-        const base = `http://127.0.0.1:${address.port}/api/repositories/${repositoryId}/query`;
+        const base = `http://127.0.0.1:${address.port}/api/repositories/${fixtureRepositoryId}/query`;
         const post = async <T>(path: string, body: unknown, expectedStatus = 200): Promise<T> => {
-            const response = await fetch(`${base}/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+            const response = await fetch(`${base}/${path}`, { method: "POST", headers: { "content-type": "application/json", Cookie: session.cookieHeader }, body: JSON.stringify(body) });
             assert.equal(response.status, expectedStatus, `${path} status`);
             return await response.json() as T;
         };
-        const symbol = await post<{ id: string; name: string; file: { path: string }; signature: string | null }>("symbol", { symbolId: productionSymbol.rows[0].id });
-        assert.equal(symbol.id, productionSymbol.rows[0].id);
-        const file = await post<{ id: string; symbols: unknown[]; chunkCount: number }>("file", { path: productionFile.rows[0].path.replace(/\\/g, "/") });
+        const symbol = await post<{ id: string; name: string; file: { path: string }; signature: string | null }>("symbol", { symbolId: source });
+        assert.equal(symbol.id, source);
+        const file = await post<{ id: string; symbols: unknown[]; chunkCount: number }>("file", { path: "src\\reconciliation.ts" });
         assert.ok(file.id); assert.ok(Array.isArray(file.symbols)); assert.ok(file.chunkCount >= 0);
-        const structural = await post<{ mode: string; semanticAvailable: null; evidence: Array<{ file: { path: string }; source: string }> }>("search", { query: productionSymbol.rows[0].name, mode: "structural", topK: 5, maxDepth: 1 });
+        assert.equal(file.id, sourceFileId);
+        const structural = await post<{ mode: string; semanticAvailable: null; evidence: Array<{ file: { path: string }; source: string }> }>("search", { query: "reconcilePayment", mode: "structural", topK: 5, maxDepth: 1 });
         assert.equal(structural.mode, "structural"); assert.ok(structural.evidence.every(item => item.source === "STRUCTURAL"));
-        const callees = await post<{ target: { id: string }; results: Array<{ symbol: { id: string }; relationship: { type: string } }> }>("trace", { symbolId: edge.rows[0].sourceId, direction: "callees", maxDepth: 1 });
-        assert.ok(callees.results.some(item => item.symbol.id === edge.rows[0].targetId && item.relationship.type === "CALLS"));
-        const callers = await post<{ results: Array<{ symbol: { id: string } }> }>("trace", { symbolId: edge.rows[0].targetId, direction: "callers", maxDepth: 1 });
-        assert.ok(callers.results.some(item => item.symbol.id === edge.rows[0].sourceId));
-        const impact = await post<{ target: { id: string }; callers: unknown[]; affectedFiles: unknown[] }>("impact", { symbolId: edge.rows[0].targetId, maxDepth: 2 });
-        assert.equal(impact.target.id, edge.rows[0].targetId); assert.ok(Array.isArray(impact.callers)); assert.ok(Array.isArray(impact.affectedFiles));
-        const path = await post<{ found: boolean; pathLength: number; steps: Array<{ symbol: { id: string }; file: { path: string } }> }>("path", { fromSymbolId: edge.rows[0].sourceId, toSymbolId: edge.rows[0].targetId, maxDepth: 5 });
+        const callees = await post<{ target: { id: string }; results: Array<{ symbol: { id: string }; relationship: { type: string } }> }>("trace", { symbolId: source, direction: "callees", maxDepth: 1 });
+        assert.ok(callees.results.some(item => item.symbol.id === target && item.relationship.type === "CALLS"));
+        const callers = await post<{ results: Array<{ symbol: { id: string } }> }>("trace", { symbolId: target, direction: "callers", maxDepth: 1 });
+        assert.ok(callers.results.some(item => item.symbol.id === source));
+        const impact = await post<{ target: { id: string }; callers: Array<{ symbolId: string; evidencePaths: Array<{ symbols: Array<{ id: string }>; relationships: Array<{ source: { id: string }; target: { id: string }; type: string }> }> }>;
+            affectedSymbols: unknown[]; affectedFiles: unknown[] }>("impact", { symbolId: target, maxDepth: 2 });
+        assert.equal(impact.target.id, target); assert.ok(Array.isArray(impact.callers)); assert.ok(Array.isArray(impact.affectedFiles));
+        const realCaller = impact.callers.find(item => item.symbolId === source);
+        assert.ok(realCaller, "impact API returns the actual fixture caller");
+        assert.deepEqual(realCaller.evidencePaths[0].symbols.map(symbol => symbol.id), [target, source]);
+        assert.ok(realCaller.evidencePaths[0].relationships.some(item => item.source.id === source && item.target.id === target && item.type === "CALLS"));
+        assert.ok(Array.isArray(impact.affectedSymbols));
+        const path = await post<{ found: boolean; pathLength: number; steps: Array<{ symbol: { id: string }; file: { path: string } }> }>("path", { fromSymbolId: source, toSymbolId: target, maxDepth: 5 });
         assert.equal(path.found, true); assert.equal(path.pathLength, 1); assert.equal(path.steps.length, 2);
         const isolatedSymbol = await post<{ error: { code: string } }>("symbol", { symbolId: foreignSymbolId }, 404);
         assert.equal(isolatedSymbol.error.code, "SYMBOL_NOT_FOUND");
         const isolatedFile = await post<{ error: { code: string } }>("file", { path: "foreign.ts" }, 404);
         assert.equal(isolatedFile.error.code, "FILE_NOT_FOUND");
-        console.log(`Repository query PostgreSQL/API tests passed: production symbol ${symbol.name}, file ${file.id}, structural evidence ${structural.evidence.length}, CALLS ${edge.rows[0].sourceName} (${edge.rows[0].sourcePath}) -> ${edge.rows[0].targetName} (${edge.rows[0].targetPath}), real trace/impact/path, and foreign repository isolation.`);
+        console.log(`Repository query PostgreSQL/API tests passed: fixture symbol ${symbol.name}, file ${file.id}, structural evidence ${structural.evidence.length}, CALLS ${source} -> ${target}, real trace/impact/path, and foreign repository isolation.`);
     } finally {
-        if (server) await new Promise<void>((resolve, reject) => server?.close(error => error ? reject(error) : resolve()));
-        await pool.query("DELETE FROM repositories WHERE id=$1", [foreignRepoId]);
+        try {
+            if (server) await new Promise<void>((resolve, reject) => server?.close(error => error ? reject(error) : resolve()));
+        } finally {
+            await session.cleanup();
+        }
     }
 }
 

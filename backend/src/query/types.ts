@@ -1,4 +1,4 @@
-import type { GraphSymbol, PathStep, RelationshipType, TraversalHit } from "../graph/types.js";
+import type { GraphSymbol, ImpactAnalysisResult, PathStep, RelationshipType, TraversalHit } from "../graph/types.js";
 import type { SymbolType } from "../parser/symbol-types.js";
 
 export type RepositorySearchMode = "semantic" | "structural" | "hybrid";
@@ -95,5 +95,7 @@ export interface RepositoryPathResult {
     maxDepth: number;
     steps: Array<PathStep & { file: { id: string; path: string; language: string | null } }>;
 }
+
+export type RepositoryImpactResult = ImpactAnalysisResult;
 
 export type { TraversalHit };

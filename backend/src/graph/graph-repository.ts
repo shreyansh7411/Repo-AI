@@ -4,6 +4,11 @@ import type { GraphRelationship, GraphSymbol, RelationshipType, TraversalDirecti
 
 type Db = Pool | PoolClient;
 
+export interface BoundedGraphRelationships {
+    relationships: GraphRelationship[];
+    hasMore: boolean;
+}
+
 interface GraphRow {
     id: string;
     type: RelationshipType;
@@ -54,9 +59,25 @@ export class GraphRepository {
     async getAdjacentRelationships(repositoryId: string, symbolIds: string[], direction: TraversalDirection,
         relationshipTypes: RelationshipType[]): Promise<GraphRelationship[]> {
         if (!symbolIds.length || !relationshipTypes.length) return [];
+        return this.queryAdjacentRelationships(repositoryId, symbolIds, direction, relationshipTypes);
+    }
+
+    async getAdjacentRelationshipsBounded(repositoryId: string, symbolIds: string[], direction: TraversalDirection,
+        relationshipTypes: RelationshipType[], remainingBudget: number): Promise<BoundedGraphRelationships> {
+        if (!Number.isInteger(remainingBudget) || remainingBudget < 0) throw new RangeError("remainingBudget must be a non-negative integer.");
+        if (!symbolIds.length || !relationshipTypes.length) return { relationships: [], hasMore: false };
+        const fetched = await this.queryAdjacentRelationships(repositoryId, symbolIds, direction, relationshipTypes, remainingBudget + 1);
+        return { relationships: fetched.slice(0, remainingBudget), hasMore: fetched.length > remainingBudget };
+    }
+
+    private async queryAdjacentRelationships(repositoryId: string, symbolIds: string[], direction: TraversalDirection,
+        relationshipTypes: RelationshipType[], rowLimit?: number): Promise<GraphRelationship[]> {
         const directionClause = direction === "INCOMING" ? "r.target_symbol_id=ANY($2::uuid[])"
             : direction === "OUTGOING" ? "r.source_symbol_id=ANY($2::uuid[])"
                 : "(r.source_symbol_id=ANY($2::uuid[]) OR r.target_symbol_id=ANY($2::uuid[]))";
+        const limitClause = rowLimit === undefined ? "" : " LIMIT $4";
+        const values: unknown[] = [repositoryId, symbolIds, relationshipTypes];
+        if (rowLimit !== undefined) values.push(rowLimit);
         const rows = await this.db.query<GraphRow>(
             `SELECT r.id, r.type,
                     src.id AS "sourceId", src.name AS "sourceName", src.type AS "sourceType", src.file_id AS "sourceFileId",
@@ -73,8 +94,8 @@ export class GraphRepository {
              JOIN files tf ON tf.id=dst.file_id AND tf.repository_id=r.repository_id
              LEFT JOIN symbols tp ON tp.id=dst.parent_symbol_id AND tp.repository_id=r.repository_id
              WHERE r.repository_id=$1 AND ${directionClause} AND r.type=ANY($3::varchar[])
-             ORDER BY r.type, sf.path, src.start_line, src.name, src.id, tf.path, dst.start_line, dst.name, dst.id, r.id`,
-            [repositoryId, symbolIds, relationshipTypes]);
+             ORDER BY r.type, sf.path, src.start_line, src.name, src.id, tf.path, dst.start_line, dst.name, dst.id, r.id${limitClause}`,
+            values);
         return rows.rows.map(row => ({ id: row.id, type: row.type, source: mapSymbol(row, "source"), target: mapSymbol(row, "target") }));
     }
 }
