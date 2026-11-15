@@ -11,6 +11,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .repo-count, .repo-avatar, .search-form, .evidence-card, .dialog-card, .symbol-results-pane, .symbol-detail-pane, .call-trace-panel, .settings-card, .call-explorer, .detail-section, .symbol-search { border-color: var(--line); }
 .workspace-nav, .workspace-nav-item, .repository-row, .repository-list, .sidebar-footer { border-color: var(--line); }
 .workspace-nav-item { color: var(--muted); font-size: 13px; }
+.workspace-nav-secondary { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; padding-top: 9px; border-top: 1px solid var(--line); }
+.workspace-nav-secondary .nav-section-label { opacity: .72; }
+.workspace-nav-secondary .workspace-nav-item { font-size: 12px; opacity: .78; }
+.workspace-nav-secondary .workspace-nav-item:hover, .workspace-nav-secondary .workspace-nav-item.active { opacity: 1; }
 .workspace-nav-item:hover, .repository-row:hover, .icon-button:hover:not(:disabled) { color: var(--ink); background: var(--surface-raised); }
 .workspace-nav-item.active, .repository-row.selected { border-color: color-mix(in srgb, var(--accent), var(--line) 70%); color: var(--ink); background: color-mix(in srgb, var(--accent), var(--surface) 93%); }
 .repository-row.selected .repo-avatar { color: var(--accent); }
@@ -95,7 +99,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .detail-file, .detail-line-grid strong, .detail-property strong, .signature-block code { font-size: 12px; }
 .signed-in-copy strong, .signed-in-copy small, .sign-out-button, .sidebar-state, .repo-row-name, .repo-row-meta, .workspace-nav-item { font-size: 12px; }
 .eyebrow, .brand-caption, .nav-section-label { font-size: 10px; }
-@media (max-width: 760px) { .settings-grid { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .workspace-nav-secondary { grid-column: 1 / -1; } .settings-grid { grid-template-columns: 1fr; } }
 
 :root[data-theme='light'] .app-shell { background: var(--canvas); }
 :root[data-theme='light'] .sidebar, :root[data-theme='light'] .settings-card, :root[data-theme='light'] .evidence-card, :root[data-theme='light'] .dialog-card, :root[data-theme='light'] .call-trace-panel { background: var(--surface); }

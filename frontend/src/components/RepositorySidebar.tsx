@@ -40,10 +40,12 @@ export function RepositorySidebar({ repositories, selectedId, loading, error, ac
       <NavLink to="/dashboard" className={`workspace-nav-item${activeView === 'dashboard' ? ' active' : ''}`} aria-current={activeView === 'dashboard' ? 'page' : undefined}><Icon name="folder" size={16} />Dashboard</NavLink>
       <NavLink to="/explorer" className={`workspace-nav-item${activeView === 'explorer' ? ' active' : ''}`} aria-current={activeView === 'explorer' ? 'page' : undefined}><Icon name="search" size={16} />Search</NavLink>
       <NavLink to="/symbols" className={`workspace-nav-item${activeView === 'symbols' ? ' active' : ''}`} aria-current={activeView === 'symbols' ? 'page' : undefined}><Icon name="code" size={16} />Symbols</NavLink>
-      <NavLink to="/callers" className={`workspace-nav-item${activeView === 'callers' ? ' active' : ''}`} aria-current={activeView === 'callers' ? 'page' : undefined}><Icon name="arrow" size={16} />Callers</NavLink>
-      <NavLink to="/impact" className={`workspace-nav-item${activeView === 'impact' ? ' active' : ''}`} aria-current={activeView === 'impact' ? 'page' : undefined}><Icon name="refresh" size={16} />Impact</NavLink>
-      <NavLink to="/paths" className={`workspace-nav-item${activeView === 'paths' ? ' active' : ''}`} aria-current={activeView === 'paths' ? 'page' : undefined}><Icon name="folder" size={16} />Paths</NavLink>
-      <NavLink to="/assistant" className={`workspace-nav-item${activeView === 'assistant' ? ' active' : ''}`} aria-current={activeView === 'assistant' ? 'page' : undefined}><Icon name="brand" size={16} />Assistant</NavLink>
+      <NavLink to="/paths" className={`workspace-nav-item${activeView === 'paths' ? ' active' : ''}`} aria-current={activeView === 'paths' ? 'page' : undefined}><Icon name="folder" size={16} />Path Explorer</NavLink>
+      <div className="workspace-nav-secondary">
+        <span className="nav-section-label">COMING SOON</span>
+        <NavLink to="/impact" className={`workspace-nav-item${activeView === 'impact' ? ' active' : ''}`} aria-current={activeView === 'impact' ? 'page' : undefined}><Icon name="refresh" size={16} />Impact Analysis</NavLink>
+        <NavLink to="/assistant" className={`workspace-nav-item${activeView === 'assistant' ? ' active' : ''}`} aria-current={activeView === 'assistant' ? 'page' : undefined}><Icon name="brand" size={16} />AI Assistant</NavLink>
+      </div>
     </nav>
 
     <div className="repository-list" aria-label="Repositories">
