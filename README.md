@@ -2,24 +2,32 @@
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Open%20Repo--AI-7048d7?style=for-the-badge)](https://repo-ai-frontend.onrender.com)
 
-Repo AI is a repository-intelligence application for indexing source code and
-answering questions about a repository. It combines a React/Vite frontend with
-a TypeScript/Express backend, PostgreSQL metadata storage, deterministic code
-graph analysis, and optional Gemini-powered embeddings and semantic search.
+Repo-AI is a repository intelligence workspace for indexing source code and
+exploring repository structure with evidence from the indexed source. It
+combines a React 19/Vite frontend, a TypeScript/Express API, PostgreSQL with
+pgvector, Tree-sitter parsing, deterministic graph analysis, and optional
+Gemini-powered embeddings and retrieval.
 
 ## What the application does
 
-- Accepts repositories for indexing.
-- Parses supported source files into files, symbols, chunks, and relationships.
-- Stores repository metadata in PostgreSQL.
-- Supports structural symbol and file lookup.
-- Supports semantic and hybrid code search when embeddings are available.
-- Provides caller/callee traces, impact analysis, and shortest dependency paths.
-- Exposes a unified query API for symbol, file, search, trace, impact, and path
-  requests.
+- Create an account, add a Git repository, and index it in an owner-scoped workspace.
+- View indexed repository metadata and counts on the Dashboard.
+- Browse indexed files and symbols, inspect declarations and source context, and follow direct callers/callees.
+- Search indexed code structurally or with hybrid retrieval; API clients can also request semantic-only retrieval.
+- Explore bounded, directed shortest paths across selected relationship types.
+- Use deterministic trace and impact APIs to inspect graph-derived dependencies.
+- Try a temporary, isolated demo with a public GitHub repository, without an account.
 
-Gemini is optional. Structural search, repository metadata queries, and graph
-analysis do not require Gemini.
+Impact Analysis and the AI Assistant have backend APIs, but their authenticated
+frontend pages are placeholders. Structural search, symbol browsing, caller /
+callee exploration, Path Explorer, and repository metadata queries do not
+require Gemini. Semantic retrieval requires an available Gemini provider and
+stored embeddings; coverage may be incomplete.
+
+The authenticated sidebar groups Dashboard, Search, Symbols, and Path Explorer
+under Explore. Caller/callee panels are part of Symbols. Impact Analysis and
+AI Assistant are listed separately as coming soon. The `/callers` URL remains
+available as a compatibility route to the Symbols workspace.
 
 ## Repository layout
 
@@ -50,6 +58,37 @@ projects may have their own build files and test resources.
 - The PostgreSQL `vector` extension for embedding/vector search features
 - A Gemini API key only when using real embedding or Gemini generation features
 
+## Local setup
+
+1. Install Node.js 22 and PostgreSQL with the `vector` extension available.
+2. Create a local database and configure `backend/.env` using
+   `backend/.env.example`. At minimum, configure local database access and a
+   random `AUTH_JWT_SECRET` of at least 32 bytes.
+3. Apply the database migrations and start the API:
+
+   ```sh
+   cd backend
+   npm install
+   npm run db:migrate
+   npm run dev
+   ```
+
+4. In a second terminal, configure `frontend/.env` with
+   `VITE_API_BASE_URL=http://localhost:5000/api`, then start the frontend:
+
+   ```sh
+   cd frontend
+   npm install
+   npm run dev
+   ```
+
+The frontend uses credentialed requests for HttpOnly cookie authentication.
+The backend's local CORS configuration permits development origins; production
+requires an exact configured frontend origin. Use `npm run db:migrate` from
+`backend` to apply pending migrations in order. The runner enables pgvector
+before schema migrations; the database role must be allowed to create the
+extension.
+
 ## Configuration
 
 The backend reads its runtime configuration from `backend/.env`.
@@ -64,14 +103,18 @@ Configure the values for the local PostgreSQL instance:
 | `DB_NAME` | Database name | `repo-ai` |
 | `DB_USER` | Database user | `postgres` |
 | `DB_PASSWORD` | Database password | Local secret |
-| `DATABASE_URL` | Production PostgreSQL connection string; optional locally | Render PostgreSQL internal URL |
-| `DB_SSL_MODE` | Production TLS policy: `disable`, `require`, or `verify-full` | `disable` locally; `require` for external database URLs |
-| `CORS_ORIGIN` | Exact frontend origin allowed by production API | `https://<frontend>.onrender.com` |
-| `REPOSITORY_STORAGE_PATH` | Absolute instance-local directory for cloned repositories | `backend/repositories` default locally; ephemeral in production |
-| `GEMINI_API_KEY` | Gemini access key | Optional |
-| `GEMINI_EMBEDDING_MODEL` | Embedding model | `gemini-embedding-2` |
-| `GEMINI_GENERATION_MODEL` | Generation model | `gemini-3.8-flash` |
-| `MAX_CONTEXT_CHARS` | Maximum generated context size | `24000` |
+| `DATABASE_URL` | Production PostgreSQL URL; optional locally | Set in production |
+| `DB_SSL_MODE` | Production TLS: `disable`, `require`, or `verify-full` | `disable` locally |
+| `CORS_ORIGIN` | Exact allowed production frontend origin | Local default in `.env.example` |
+| `REPOSITORY_STORAGE_PATH` | Absolute path used for cloned repositories | Local default is `backend/repositories` |
+| `AUTH_JWT_SECRET` | Signing secret for cookie sessions (32+ bytes in production) | Generate locally; never commit |
+| `AUTH_COOKIE_SAME_SITE` | Cookie policy: `lax`, `strict`, or `none` | `lax` locally; `none` for cross-site Render services |
+| `GEMINI_API_KEY` | Enables real Gemini embedding and generation requests | Optional |
+| `GEMINI_EMBEDDING_MODEL`, `GEMINI_GENERATION_MODEL` | Gemini model configuration | See `.env.example` |
+| `MAX_CONTEXT_CHARS` | Maximum assembled retrieval context for generation | `24000` |
+| `DEMO_ENABLED` | Enables the public anonymous demo | `false` |
+| `DEMO_RATE_LIMIT_SECRET` | HMAC secret required when demo mode is enabled (32+ bytes) | Required only with demo enabled |
+| `DEMO_*` | Demo TTL, concurrency, resource limits, rate limits, and cleanup interval | Defaults and bounds in `.env.example` |
 
 Never commit `backend/.env` or any other credentials. The root `.gitignore`
 ignores `.env` files, passwords, API keys, certificates, private keys,
@@ -84,8 +127,9 @@ The backend provides cookie-based authentication and scopes regular repository
 APIs to the signed-in owner. Anonymous recruiter demos are a separate,
 opt-in API and do not weaken authenticated repository ownership.
 
-Create a Render PostgreSQL database, backend Web Service, and frontend Static
-Site. Both package manifests require Node 22. For the backend, use build command
+The live application is available at the [Repo-AI live demo](https://repo-ai-frontend.onrender.com).
+For a separate deployment, create a Render PostgreSQL database, backend Web
+Service, and frontend Static Site. Both package manifests require Node 22. For the backend, use build command
 `cd backend && npm install && npm run build` and start command
 `cd backend && npm start`. The backend listens on Render's `PORT` at
 `0.0.0.0`. For the frontend, use build command
@@ -100,16 +144,22 @@ Set these backend environment variables in Render:
 | `DATABASE_URL` | Render PostgreSQL internal URL when services share a region |
 | `DB_SSL_MODE` | `disable` for Render's internal URL; `require` for external URL |
 | `CORS_ORIGIN` | Exact HTTPS frontend origin, without a path or trailing slash |
+| `AUTH_JWT_SECRET` | Random signing secret of at least 32 bytes |
 | `AUTH_COOKIE_SAME_SITE` | `none` for Render-hosted frontend/backend origins |
 | `REPOSITORY_STORAGE_PATH` | An absolute directory available to the backend instance |
 
-This deployment uses Render's ephemeral filesystem and does not attach a
-persistent disk. Clone directories are stored locally under
-`REPOSITORY_STORAGE_PATH` and can disappear after a backend restart,
-redeployment, or instance replacement. PostgreSQL stores repository and
-indexed metadata, not Git working trees, so metadata can remain after clone
-files disappear. Use a Render internal database URL for same-region traffic;
-external PostgreSQL URLs require TLS.
+Set `GEMINI_API_KEY` only if enabling real embedding or generation requests.
+The public demo remains disabled unless `DEMO_ENABLED=true`; enabling it also
+requires a random `DEMO_RATE_LIMIT_SECRET` of at least 32 bytes.
+
+Clone directories are stored under `REPOSITORY_STORAGE_PATH`. If that path is
+on ephemeral storage, clones can disappear after a restart, redeployment, or
+instance replacement while PostgreSQL metadata remains. Attach a persistent
+disk and point `REPOSITORY_STORAGE_PATH` at it if clone-dependent operations
+must survive restarts. Use one backend instance unless clone storage is
+genuinely shared; PostgreSQL advisory locks do not share local files. Use a
+Render internal database URL for same-region traffic; external PostgreSQL
+URLs require TLS.
 
 Exactly one backend instance is required while repository storage is
 instance-local. Multiple backend instances require genuinely shared clone
@@ -194,14 +244,12 @@ unavailable. The authenticated search APIs retain their existing modes.
 Each repository request verifies the cookie's session owns the repository;
 foreign or authenticated-user repositories return not found.
 
-Initialize or upgrade the PostgreSQL database before serving application
-traffic. Run `cd backend && npm run db:migrate` as a Render pre-deploy command
-or manually against the production database. The migration runner discovers
-the numbered migration files and applies pending migrations in order,
-transactionally; production must complete migrations 001 through 006 before
-the new backend receives traffic. The command enables PostgreSQL's `vector`
-extension first. The database user must have permission to create the
-extension.
+Initialize or upgrade PostgreSQL before serving application traffic. Run
+`npm run db:migrate` from `backend` as a Render pre-deploy command or through a
+carefully targeted operator connection. The migration runner skips applied
+migrations, applies pending migrations in order and transactionally, and
+enables the `vector` extension first. The database user must have permission
+to create the extension. The current migration set is 001 through 006.
 
 ### Authentication and repository ownership
 
@@ -226,7 +274,16 @@ Public registrants cannot invoke this bootstrap operation.
 The backend exposes repository ingestion under `/api/repositories` and a
 health endpoint under `/api/health`.
 
-### Embeddings and semantic search
+### Search and embeddings
+
+The authenticated workspace offers Structural and Hybrid search. Structural
+search matches query terms to indexed symbol names, then retrieves related
+graph and source-chunk evidence; it does not infer semantic intent. Hybrid
+search adds semantic evidence when Gemini is available and chunks have stored
+vectors, with structural fallback metadata when semantic retrieval is
+unavailable. The unified query API also accepts `mode: "semantic"`; if query
+embedding fails, it returns structural fallback evidence marked unavailable.
+A standalone semantic option is not currently shown in the workspace.
 
 Generate missing embeddings for a repository:
 
@@ -234,7 +291,8 @@ Generate missing embeddings for a repository:
 POST /api/repositories/{repositoryId}/embeddings
 ```
 
-Search embedded chunks:
+The legacy semantic search endpoint embeds the query and searches embedded
+chunks:
 
 ```http
 POST /api/repositories/{repositoryId}/search
@@ -243,8 +301,9 @@ Content-Type: application/json
 {"query":"payment validation flow","limit":5}
 ```
 
-The search limit defaults to 5 and is capped at 50. Embeddings are generated
-in batches, and failed chunks remain retryable.
+Its limit defaults to 5 and is capped at 50. Embeddings are generated in
+batches, and failed chunks remain retryable. Semantic coverage can be partial
+until all eligible chunks have embeddings.
 
 ### Trace and impact analysis
 
@@ -277,11 +336,21 @@ search budget, `alternativePathsTruncated` reports additional shortest paths
 omitted beyond five, and `pathsTruncated` is true when either condition occurs.
 These are static graph paths, not proof of runtime execution.
 
+The impact endpoints return graph-derived caller, implementation, or subclass
+evidence as available. Import evidence identifies a dependent file; it does
+not prove symbol-level use of an imported symbol. The authenticated `/impact`
+frontend route is still a placeholder; impact analysis is currently available to API clients.
+Caller and callee exploration is available in each selected method or
+function's Symbols detail panel. The sidebar no longer has a separate Callers
+item; `/callers` remains a compatibility route to Symbols.
+
 ### Unified repository query API
 
 ```http
 POST /api/repositories/{repositoryId}/query/symbol
 {"symbolId":"<symbol-uuid>"}
+
+GET /api/repositories/{repositoryId}/query/symbols?page=1&pageSize=50&search=payment
 
 POST /api/repositories/{repositoryId}/query/file
 {"path":"src/main/java/example/Service.java"}
@@ -299,8 +368,9 @@ POST /api/repositories/{repositoryId}/query/path
 {"fromSymbolId":"<symbol-uuid>","toSymbolId":"<symbol-uuid>","maxDepth":5}
 ```
 
-Search modes are `semantic`, `structural`, and `hybrid`. Structural modes
-remain usable without Gemini. Hybrid graph expansion is capped at depth 2.
+Search modes are `semantic`, `structural`, and `hybrid`. Structural search and
+graph queries work without Gemini. Hybrid graph expansion is capped at depth
+2.
 Unified path requests accept the same optional `relationshipTypes` filter and
 use `CALLS` when it is omitted.
 
